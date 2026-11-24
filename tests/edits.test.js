@@ -98,3 +98,12 @@ test('applyEdits: an optional date may be empty, and a whole-number choice becom
   assert.deepEqual(validatePlan(plan), []);
   assert.equal(applyEdits(example, [{ path: 'loans.0.asAt', type: 'dateOrNull', value: 'soon' }]).errors.length, 1);
 });
+
+import { passwordProblem } from '../assets/js/plan.js';
+
+test('passwordProblem explains what is wrong with a new password, or returns nothing', () => {
+  assert.match(passwordProblem('short', 'short'), /at least 10/);
+  assert.match(passwordProblem('long-enough-pass', 'different-pass'), /don't match/);
+  assert.match(passwordProblem('', ''), /at least 10/);
+  assert.equal(passwordProblem('long-enough-pass', 'long-enough-pass'), '');
+});

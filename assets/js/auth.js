@@ -28,6 +28,12 @@ export async function signOut() {
   if (db) await db.auth.signOut({ scope: 'local' });
 }
 
+export async function changePassword(password) {
+  if (!db) throw new Error('The app has not been connected to its database yet.');
+  const { error } = await db.auth.updateUser({ password });
+  if (error) throw new Error(error.message);
+}
+
 export function onAuthChange(fn) {
   if (db) db.auth.onAuthStateChange((event) => fn(event));
 }

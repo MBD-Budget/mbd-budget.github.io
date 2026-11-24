@@ -254,3 +254,10 @@ export function blankRow(list, plan) {
       throw new Error(`No blank row for ${list}`);
   }
 }
+
+// ---- Passwords ---------------------------------------------------------------
+export function passwordProblem(password, again) {
+  if (typeof password !== 'string' || password.length < 10) return 'Use at least 10 characters.';
+  if (password !== again) return 'The two passwords don\'t match.';
+  return '';
+}

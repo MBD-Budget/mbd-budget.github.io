@@ -1,4 +1,6 @@
 import { esc } from '../format.js';
+import { passwordProblem } from '../plan.js';
+import { changePassword } from '../auth.js';
 import { confirmButton, editBar, field, choice, addRowButton, removeRowButton } from './shared.js';
 
 const ROLES = [
@@ -115,6 +117,19 @@ export function render(state, ui) {
   </div>
 
   <div class="section">
+    <h2>Password</h2>
+    <form class="card edit-card" data-form="password" novalidate>
+      ${ui.passwordError ? `<div class="banner err" role="alert">${esc(ui.passwordError)}</div>` : ''}
+      ${ui.passwordDone ? '<div class="banner ok" role="status">Password changed. Use the new one next time you sign in.</div>' : ''}
+      <input type="text" name="username" autocomplete="username" value="${esc(ui.userEmail || '')}" hidden />
+      <label class="lbl">New password <input class="form-input" type="password" name="password" autocomplete="new-password" /></label>
+      <label class="lbl">New password again <input class="form-input" type="password" name="again" autocomplete="new-password" /></label>
+      <p class="hint">At least 10 characters. This changes the password for this sign-in on every device.</p>
+      <div class="form-actions"><button class="small-btn" type="submit"${ui.offline || ui.busy || ui.isDemo ? ' disabled' : ''}>Change password</button></div>
+    </form>
+  </div>
+
+  <div class="section">
     <h2>This device</h2>
     <div class="card row-between">
       <span>Signed in as <strong>${esc(ui.userEmail || '')}</strong></span>
@@ -122,3 +137,21 @@ export function render(state, ui) {
     </div>
   </div>`}`;
 }
+
+export const actions = {
+  'submit:password': async ({ form, ui, paint }) => {
+    const problem = passwordProblem(form.elements.password.value, form.elements.again.value);
+    Object.assign(ui, { passwordError: problem, passwordDone: false });
+    if (problem) return paint();
+    ui.busy = true;
+    paint();
+    try {
+      await changePassword(form.elements.password.value);
+      ui.passwordDone = true;
+    } catch (error) {
+      ui.passwordError = error.message;
+    }
+    ui.busy = false;
+    return paint();
+  },
+};

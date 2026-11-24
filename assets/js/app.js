@@ -33,8 +33,9 @@ const ui = {
   editing: false, draft: null, errors: [], armed: null, busy: false, offline: false,
   signinError: '', signinEmail: '', userEmail: '',
   importErrors: [], pendingImport: null,
-  costMode: 'budget', notice: '',
+  costMode: 'budget', notice: '', isDemo: false,
 };
+ui.isDemo = DEMO;
 let repaintWaiting = false;
 
 // ---- Theme and toast -------------------------------------------------------
