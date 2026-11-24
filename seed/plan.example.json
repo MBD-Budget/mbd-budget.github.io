@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "plan": {
+    "period": { "label": "Example period", "start": "2026-12-01", "end": "2027-05-31" },
+    "people": [
+      { "id": "pa", "name": "Person A" },
+      { "id": "pb", "name": "Person B" }
+    ],
+    "incomeSources": [
+      { "id": "a1", "personId": "pa", "name": "Employer One", "takeHome": 2000, "isEstimate": false,
+        "payday": "Thursday", "weekOfFortnight": 1, "note": "Permanent full time", "gross": 3000,
+        "sacrifices": [ { "label": "Rent", "amount": 500 } ] },
+      { "id": "b1", "personId": "pb", "name": "Employer Two", "takeHome": 1000, "isEstimate": true,
+        "payday": "Monday", "weekOfFortnight": 2, "note": "Casual, so this is an estimate", "gross": 1200,
+        "sacrifices": [] },
+      { "id": "b2", "personId": "pb", "name": "Employer Three", "takeHome": 1500, "isEstimate": false,
+        "payday": "Wednesday", "weekOfFortnight": 2, "note": "Part time", "gross": 2400,
+        "sacrifices": [ { "label": "Packaging", "amount": 300 }, { "label": "Super", "amount": 100 } ] }
+    ],
+    "loans": [
+      { "id": "l1", "personId": "pa", "name": "Study loan", "balance": 10000, "asAt": "2026-11-01" }
+    ],
+    "categories": [
+      { "id": "c1", "name": "Rent", "measured": 800, "budget": 400, "basis": "Top-up on packaged rent", "link": null },
+      { "id": "c2", "name": "Power", "measured": 200, "budget": 200, "basis": "Last 12 months of bills", "link": null },
+      { "id": "c3", "name": "Fuel", "measured": 300, "budget": null, "basis": "From the fuel calculator", "link": "fuel" },
+      { "id": "c4", "name": "Fun", "measured": null, "budget": 100, "basis": "New this period", "link": null },
+      { "id": "c5", "name": "Holidays", "measured": 1000, "budget": 0, "basis": "Paused", "link": null }
+    ],
+    "fuel": {
+      "pricePerLitre": 2,
+      "trips": [
+        { "id": "f1", "name": "Work run", "car": "Car one", "returnKm": 50, "tripsPerWeek": 4, "litresPer100": 8 },
+        { "id": "f2", "name": "Weekend", "car": "Car two", "returnKm": 100, "tripsPerWeek": 1, "litresPer100": 6 }
+      ]
+    },
+    "accounts": [
+      { "id": "joint", "name": "Joint everyday", "job": "All pay lands here", "role": "none" },
+      { "id": "dep", "name": "Deposit saver", "job": "House deposit", "role": "deposit" },
+      { "id": "emg", "name": "Emergency saver", "job": "Emergency fund", "role": "emergency" },
+      { "id": "hub", "name": "Bills hub", "job": "Receives transfers, then splits them", "role": "none" },
+      { "id": "sub1", "name": "Bills: car", "job": "Irregular car costs", "role": "none" },
+      { "id": "sub2", "name": "Bills: home", "job": "Irregular home costs", "role": "none" },
+      { "id": "ppa", "name": "Person A spending", "job": "Day-to-day spending", "role": "none" },
+      { "id": "ppb", "name": "Person B spending", "job": "Day-to-day spending", "role": "none" }
+    ],
+    "transfers": [
+      { "id": "t1", "incomeSourceId": "a1", "fromAccountId": "joint", "toAccountId": "dep", "amount": 700, "rule": "fixed" },
+      { "id": "t2", "incomeSourceId": "a1", "fromAccountId": "joint", "toAccountId": "hub", "amount": 500, "rule": "fixed" },
+      { "id": "t3", "incomeSourceId": "a1", "fromAccountId": "joint", "toAccountId": "ppa", "amount": 300, "rule": "fixed" },
+      { "id": "t4", "incomeSourceId": "a1", "fromAccountId": "hub", "toAccountId": "sub1", "amount": 300, "rule": "fixed" },
+      { "id": "t5", "incomeSourceId": "a1", "fromAccountId": "hub", "toAccountId": "sub2", "amount": 200, "rule": "fixed" },
+      { "id": "t6", "incomeSourceId": "a1", "fromAccountId": "joint", "toAccountId": null, "amount": 500, "rule": "stays" },
+      { "id": "t7", "incomeSourceId": "b1", "fromAccountId": "joint", "toAccountId": "ppb", "amount": 200, "rule": "fixed" },
+      { "id": "t8", "incomeSourceId": "b1", "fromAccountId": "joint", "toAccountId": "dep", "amount": 0, "rule": "remainder" },
+      { "id": "t9", "incomeSourceId": "b2", "fromAccountId": "joint", "toAccountId": "dep", "amount": 600, "rule": "fixed" },
+      { "id": "t10", "incomeSourceId": "b2", "fromAccountId": "joint", "toAccountId": "hub", "amount": 800, "rule": "fixed" },
+      { "id": "t11", "incomeSourceId": "b2", "fromAccountId": "joint", "toAccountId": "emg", "amount": 100, "rule": "fixed" },
+      { "id": "t12", "incomeSourceId": "b2", "fromAccountId": "hub", "toAccountId": "sub1", "amount": 800, "rule": "fixed" }
+    ],
+    "goals": [
+      { "id": "g1", "name": "First goal", "target": 26000, "targetDate": "2027-05-31" },
+      { "id": "g2", "name": "Longer goal", "target": 50000, "targetDate": "2028-12-31" }
+    ],
+    "savings": { "perFortnight": 2000 }
+  },
+  "balances": [
+    { "accountId": "dep", "onDate": "2026-10-31", "balance": 5000 },
+    { "accountId": "dep", "onDate": "2026-11-21", "balance": 3000 },
+    { "accountId": "emg", "onDate": "2026-11-21", "balance": 1000 }
+  ],
+  "history": []
+}
