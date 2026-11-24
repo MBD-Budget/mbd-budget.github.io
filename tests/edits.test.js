@@ -86,3 +86,15 @@ test('blank rows get ids that do not clash with existing ones', () => {
   assert.notEqual(a.id, b.id);
   assert.ok(!example.transfers.some((t) => t.id === a.id));
 });
+
+test('applyEdits: an optional date may be empty, and a whole-number choice becomes a number', () => {
+  const { plan, errors } = applyEdits(example, [
+    { path: 'loans.0.asAt', type: 'dateOrNull', value: '' },
+    { path: 'incomeSources.0.weekOfFortnight', type: 'choiceInt', value: '2' },
+  ]);
+  assert.deepEqual(errors, []);
+  assert.equal(plan.loans[0].asAt, null);
+  assert.equal(plan.incomeSources[0].weekOfFortnight, 2);
+  assert.deepEqual(validatePlan(plan), []);
+  assert.equal(applyEdits(example, [{ path: 'loans.0.asAt', type: 'dateOrNull', value: 'soon' }]).errors.length, 1);
+});

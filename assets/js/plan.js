@@ -146,6 +146,7 @@ const EDIT_MESSAGES = {
   moneyOrNull: 'Enter an amount, or leave it empty.',
   number: 'Enter a number, zero or more.',
   date: 'Choose a date.',
+  dateOrNull: 'Choose a date, or leave it empty.',
   text: 'This can\'t be empty.',
 };
 
@@ -168,6 +169,11 @@ function readEdit(type, value) {
     }
     case 'date':
       return isDate(text) ? { ok: true, value: text } : { ok: false };
+    case 'dateOrNull':
+      if (text === '' || text === null || text === undefined) return { ok: true, value: null };
+      return isDate(text) ? { ok: true, value: text } : { ok: false };
+    case 'choiceInt':
+      return /^\d+$/.test(String(text)) ? { ok: true, value: Number(text) } : { ok: false };
     case 'text':
       return isText(text) ? { ok: true, value: text } : { ok: false };
     case 'textOptional':

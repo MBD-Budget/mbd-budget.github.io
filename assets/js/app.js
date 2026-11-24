@@ -1,6 +1,7 @@
 // Router, render loop and event wiring. Hash-based routing, no build step.
 import { configured, currentUser, signIn, onAuthChange } from './auth.js';
-import * as store from './store.js';
+import * as liveStore from './store.js';
+import * as demoStore from './store-demo.js';
 import { applyEdits, blankRow, validatePlan, validateExport, parseMoney } from './plan.js';
 import { esc, isoToday } from './format.js';
 import { LOGO_SVG } from './logo.js';
@@ -12,6 +13,10 @@ import * as savingsView from './views/savings.js';
 import * as settingsView from './views/settings.js';
 
 const root = document.getElementById('root');
+
+// ?demo runs the whole app on made-up figures held in memory: no sign-in, nothing saved.
+const DEMO = new URLSearchParams(location.search).has('demo');
+const store = DEMO ? demoStore : liveStore;
 
 const PAGES = [
   { route: '/',         key: 'checklist', label: 'Checklist', icon: '✓', view: checklistView },
@@ -85,7 +90,7 @@ function headerHtml(page) {
 }
 
 function bodyHtml(page) {
-  if (!configured) {
+  if (!configured && !DEMO) {
     return `<h1>Not connected</h1><div class="card"><p class="hint">This copy of the app has not been connected to its database yet.</p></div>`;
   }
   if (!user) return signinView.render(ui);
@@ -95,15 +100,16 @@ function bodyHtml(page) {
     ? `<div class="banner warn" role="status">Can't reach the database. Showing what this phone last saw. If this lasts, the database may be paused: open the Supabase dashboard and press Restore.
         <button class="small-btn" data-action="retry">Try again</button></div>`
     : '';
+  const demo = DEMO ? `<div class="banner warn" role="status">Demo with made-up figures. Nothing here is saved.</div>` : '';
   const notice = ui.notice ? `<div class="banner err" role="alert">${esc(ui.notice)}</div>` : '';
 
   if (!state.plan && page.key !== 'settings') {
-    return `${banner}<h1>${esc(page.label)}</h1>
+    return `${demo}${banner}<h1>${esc(page.label)}</h1>
       <div class="card"><p>No plan loaded yet.</p>
       <p class="hint">Go to <a href="#/settings">Settings</a> and import a plan file to get started.</p></div>`;
   }
   const view = { ...state, plan: ui.draft || state.plan, today: isoToday() };
-  return banner + notice + page.view.render(view, ui);
+  return demo + banner + notice + page.view.render(view, ui);
 }
 
 let paintedKey = null;
@@ -398,7 +404,7 @@ function hideSplash() {
 
 (async function start() {
   try {
-    const existing = configured ? await currentUser() : null;
+    const existing = DEMO ? { email: 'demo' } : (configured ? await currentUser() : null);
     if (existing) await signedIn(existing); else paint();
   } catch (error) {
     ui.notice = error.message;

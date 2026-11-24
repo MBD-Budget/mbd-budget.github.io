@@ -24,7 +24,7 @@ function fieldError(ui, path) {
 export function field(ui, path, value, type = 'money', { label = '', width = '', placeholder = '' } = {}) {
   const shown = value === null || value === undefined ? '' : value;
   const numeric = type === 'money' || type === 'moneyOrNull' || type === 'number';
-  const inputType = type === 'date' ? 'date' : 'text';
+  const inputType = type === 'date' || type === 'dateOrNull' ? 'date' : 'text';
   const bad = (ui.errors || []).some((e) => e.path === path);
   return `<span class="field${width ? ` field-${width}` : ''}">
     <input class="form-input${bad ? ' invalid' : ''}" type="${inputType}" ${numeric ? 'inputmode="decimal"' : ''}
@@ -34,10 +34,10 @@ export function field(ui, path, value, type = 'money', { label = '', width = '',
   </span>`;
 }
 
-export function choice(ui, path, value, options, { label = '', allowEmpty = false } = {}) {
+export function choice(ui, path, value, options, { label = '', allowEmpty = false, type = 'choice' } = {}) {
   const opts = (allowEmpty ? [{ id: '', name: '–' }] : []).concat(options)
     .map((o) => `<option value="${esc(o.id)}"${String(o.id) === String(value ?? '') ? ' selected' : ''}>${esc(o.name)}</option>`).join('');
-  return `<span class="field"><select class="form-input" data-path="${esc(path)}" data-type="choice" ${label ? `aria-label="${esc(label)}"` : ''}>${opts}</select></span>`;
+  return `<span class="field"><select class="form-input" data-path="${esc(path)}" data-type="${esc(type)}" ${label ? `aria-label="${esc(label)}"` : ''}>${opts}</select></span>`;
 }
 
 export function tickbox(ui, path, value, label) {
