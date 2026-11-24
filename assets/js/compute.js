@@ -207,6 +207,7 @@ export function goalProgress(goal, saved, today, perFortnight = 0) {
     fortnightsLeft,
     neededPerFortnight,
     onTrack: neededPerFortnight === null ? false : perFortnight >= neededPerFortnight,
+    datePassed: goal.targetDate < today,
   };
 }
 

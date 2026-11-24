@@ -107,3 +107,27 @@ test('passwordProblem explains what is wrong with a new password, or returns not
   assert.match(passwordProblem('', ''), /at least 10/);
   assert.equal(passwordProblem('long-enough-pass', 'long-enough-pass'), '');
 });
+
+import { removalBlocker } from '../assets/js/plan.js';
+
+test('classifyError treats a server that is down or restoring as unreachable', () => {
+  assert.equal(classifyError({ message: 'upstream', status: 503 }), 'offline');
+  assert.equal(classifyError({ message: 'bad gateway', status: 502 }), 'offline');
+  assert.equal(classifyError({ message: 'permission denied for table plan', status: 403, code: '42501' }), 'other');
+  assert.equal(classifyError({ message: 'Could not find a session row', status: 400 }), 'other');
+});
+
+test('removalBlocker stops an account or pay that transfers still use from being removed', () => {
+  const joint = example.accounts.findIndex((a) => a.id === 'joint');
+  assert.match(removalBlocker(example, 'accounts', joint), /still used by 9 transfers/);
+  assert.match(removalBlocker(example, 'incomeSources', 1), /still used by 2 transfers/);
+  const spare = structuredClone(example);
+  spare.accounts.push({ id: 'spare', name: 'Spare', job: '', role: 'none' });
+  assert.equal(removalBlocker(spare, 'accounts', spare.accounts.length - 1), '');
+  assert.equal(removalBlocker(example, 'categories', 0), '');
+  assert.equal(removalBlocker(example, 'transfers', 0), '');
+});
+
+test('removalBlocker stops a person who still has a pay or a loan from being removed', () => {
+  assert.match(removalBlocker(example, 'people', 0), /still has/);
+});

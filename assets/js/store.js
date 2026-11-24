@@ -41,11 +41,17 @@ async function check(promise) {
   } catch (error) {
     await fail(error);
   }
-  if (result.error) await fail(result.error);
+  if (result.error) await fail({ ...result.error, message: result.error.message, status: result.error.status || result.status });
   return result.data;
 }
 
 const num = (v) => (v === null || v === undefined ? null : Number(v));
+
+// What this device last saw, for when the database can't be reached at all.
+export function cached() {
+  const state = readCache();
+  return state ? { ...state, offline: true } : null;
+}
 
 export async function load() {
   try {
@@ -97,9 +103,9 @@ export async function setLanded(amount) {
 }
 
 // Resolves to false when there was nothing to close (for example, the other phone got there first).
-export async function closeFortnight() {
+export async function closeFortnight(today) {
   try {
-    await check(db.rpc('close_fortnight'));
+    await check(db.rpc('close_fortnight', { p_today: today }));
     return true;
   } catch (error) {
     if (/nothing to close/i.test(error.message)) return false;
@@ -138,6 +144,7 @@ export async function importAll(obj) {
   await check(db.from('balances').delete().gte('id', 0));
   await check(db.from('history').delete().gte('id', 0));
   await check(db.from('ticks').delete().neq('transfer_id', ''));
+  await check(db.from('fortnight').update({ landed_amount: null }).eq('id', 1));
   if ((obj.balances || []).length) {
     await check(db.from('balances').insert(obj.balances.map((b) => ({ account_id: b.accountId, on_date: b.onDate, balance: b.balance }))));
   }

@@ -99,7 +99,12 @@ end $$;
 -- Writes one history row, clears the ticks and the landed amount, all or nothing.
 -- Works the totals out itself from the plan and the ticks.
 -- ---------------------------------------------------------------------------
-create or replace function public.close_fortnight()
+-- The caller passes its own calendar date, because the database's clock is UTC and would
+-- record a morning reset in Australia as the day before. A date more than a day away from
+-- the database's is ignored.
+drop function if exists public.close_fortnight();
+
+create or replace function public.close_fortnight(p_today date default null)
 returns public.history
 language plpgsql
 security invoker
@@ -112,6 +117,7 @@ declare
   v_total   integer;
   v_deposit numeric;
   v_row     public.history;
+  v_today   date := case when p_today is not null and abs(p_today - current_date) <= 1 then p_today else current_date end;
 begin
   if not public.is_member() then
     raise exception 'not allowed' using errcode = '42501';
@@ -162,19 +168,19 @@ begin
     raise exception 'nothing to close';
   end if;
 
-  insert into public.history (transfers_done, transfers_total, deposit_transferred)
-  values (v_done, v_total, round(v_deposit, 2))
+  insert into public.history (closed_on, transfers_done, transfers_total, deposit_transferred)
+  values (v_today, v_done, v_total, round(v_deposit, 2))
   returning * into v_row;
 
   delete from public.ticks where true;
-  update public.fortnight set landed_amount = null, started_on = current_date where id = 1;
+  update public.fortnight set landed_amount = null, started_on = v_today where id = 1;
 
   return v_row;
 end;
 $$;
 
-revoke all on function public.close_fortnight() from public, anon;
-grant execute on function public.close_fortnight() to authenticated;
+revoke all on function public.close_fortnight(date) from public, anon;
+grant execute on function public.close_fortnight(date) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Live updates between the two phones

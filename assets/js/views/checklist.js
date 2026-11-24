@@ -1,4 +1,4 @@
-import { esc, money, shortDate } from '../format.js';
+import { esc, money, shortDate, isoToday } from '../format.js';
 import { checklistGroups, checklistProgress } from '../compute.js';
 import { confirmButton } from './shared.js';
 
@@ -151,7 +151,7 @@ export const actions = {
   'landed-save': saveLanded,
   'change:landed': saveLanded,
   'fortnight-reset': ({ ui, store, act, toast }) => act(async () => {
-    const saved = await store.closeFortnight();
+    const saved = await store.closeFortnight(isoToday());
     ui.armed = null;
     toast(saved ? 'Fortnight saved. Ticks cleared.' : 'Already reset');
   }),

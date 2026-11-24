@@ -44,6 +44,8 @@ export function validatePlan(plan) {
   const errors = [];
   if (!plan || typeof plan !== 'object') return ['The plan is missing.'];
 
+  if (!plan.period || typeof plan.period !== 'object') errors.push('The budget period is missing.');
+
   const people = checkList(errors, plan.people, 'Person');
   const sources = checkList(errors, plan.incomeSources, 'Income source');
   const loans = checkList(errors, plan.loans, 'Loan');
@@ -92,20 +94,17 @@ export function validatePlan(plan) {
   const deposits = accounts.filter((a) => a.role === 'deposit').length;
   if (deposits !== 1) errors.push(`There must be exactly one house-deposit account (found ${deposits}).`);
 
-  const remainderBySource = new Map();
+  let remainders = 0;
   for (const t of transfers) {
     if (!RULES.includes(t.rule)) { errors.push(`Transfer "${t.id}" has an unknown rule.`); continue; }
     if (!sourceIds.has(t.incomeSourceId)) errors.push(`Transfer "${t.id}" points at an unknown income source.`);
     if (!accountIds.has(t.fromAccountId)) errors.push(`Transfer "${t.id}" comes from an unknown account.`);
     if (t.rule !== 'stays' && !accountIds.has(t.toAccountId)) errors.push(`Transfer "${t.id}" goes to an unknown account.`);
     if (!isNum(t.amount)) errors.push(`Transfer "${t.id}" has an amount that isn't a number.`);
-    if (t.rule === 'remainder') {
-      remainderBySource.set(t.incomeSourceId, (remainderBySource.get(t.incomeSourceId) || 0) + 1);
-    }
+    if (t.rule === 'remainder') remainders += 1;
   }
-  for (const [sourceId, count] of remainderBySource) {
-    if (count > 1) errors.push(`Income source "${sourceId}" has more than one "the rest" transfer.`);
-  }
+  // There is one "amount that landed" each fortnight, so only one transfer can depend on it.
+  if (remainders > 1) errors.push(`Only one transfer can be "the rest of this pay" (found ${remainders}).`);
 
   for (const g of goals) {
     if (!isNum(g.target)) errors.push(`Goal "${g.name || g.id}" needs a target amount.`);
@@ -216,13 +215,36 @@ export function applyEdits(plan, edits) {
 export function classifyError(error) {
   if (!error) return 'other';
   const message = String(error.message || '');
-  if (error.status === 401 || error.code === 'PGRST301' || /jwt|refresh token|not authenticated|session/i.test(message)) {
+  if (error.status === 401 || error.code === 'PGRST301'
+    || /jwt expired|invalid jwt|refresh token|not authenticated|session (not found|missing|expired)|auth session missing/i.test(message)) {
     return 'auth';
   }
-  if (error instanceof TypeError || /failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
+  if (error instanceof TypeError || (error.status >= 500 && error.status <= 599)
+    || /failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
     return 'offline';
   }
   return 'other';
+}
+
+// ---- Can this row be removed? ---------------------------------------------------
+// Returns a plain reason when something else still depends on the row, or '' when it can go.
+export function removalBlocker(plan, list, index) {
+  const row = list.split('.').reduce((o, k) => (o == null ? o : o[k]), plan)?.[index];
+  if (!row) return '';
+  const many = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  if (list === 'accounts') {
+    const used = plan.transfers.filter((t) => t.fromAccountId === row.id || t.toAccountId === row.id).length;
+    return used ? `"${row.name}" is still used by ${many(used, 'transfer')}. Change or remove those first.` : '';
+  }
+  if (list === 'incomeSources') {
+    const used = plan.transfers.filter((t) => t.incomeSourceId === row.id).length;
+    return used ? `"${row.name}" is still used by ${many(used, 'transfer')}. Remove those in Settings first.` : '';
+  }
+  if (list === 'people') {
+    const used = plan.incomeSources.filter((s) => s.personId === row.id).length + (plan.loans || []).filter((l) => l.personId === row.id).length;
+    return used ? `${row.name} still has ${many(used, 'pay or loan entry').replace('entrys', 'entries')}. Move or remove those first.` : '';
+  }
+  return '';
 }
 
 // ---- New empty rows for the lists a person can add to ----------------------

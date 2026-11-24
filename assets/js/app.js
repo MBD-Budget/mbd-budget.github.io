@@ -1,8 +1,8 @@
 // Router, render loop and event wiring. Hash-based routing, no build step.
-import { configured, currentUser, signIn, onAuthChange } from './auth.js';
+import { configured, currentUser, sessionStatus, savedEmail, signIn, onAuthChange } from './auth.js';
 import * as liveStore from './store.js';
 import * as demoStore from './store-demo.js';
-import { applyEdits, blankRow, validatePlan, validateExport, parseMoney } from './plan.js';
+import { applyEdits, blankRow, removalBlocker, validatePlan, validateExport, parseMoney } from './plan.js';
 import { esc, isoToday } from './format.js';
 import { LOGO_SVG } from './logo.js';
 import * as signinView from './views/signin.js';
@@ -30,7 +30,7 @@ let user = null;
 let state = null;
 // Everything about the screen that isn't data: edit mode, armed confirms, messages.
 const ui = {
-  editing: false, draft: null, errors: [], armed: null, busy: false, offline: false,
+  editing: false, editRoute: null, draft: null, errors: [], armed: null, busy: false, offline: false,
   signinError: '', signinEmail: '', userEmail: '',
   importErrors: [], pendingImport: null,
   costMode: 'budget', notice: '', isDemo: false,
@@ -95,7 +95,11 @@ function bodyHtml(page) {
     return `<h1>Not connected</h1><div class="card"><p class="hint">This copy of the app has not been connected to its database yet.</p></div>`;
   }
   if (!user) return signinView.render(ui);
-  if (!state) return `<p class="hint">Loading…</p>`;
+  if (!state) {
+    return ui.notice
+      ? `<div class="banner err" role="alert">${esc(ui.notice)} <button class="small-btn" data-action="retry">Try again</button></div>`
+      : `<p class="hint">Loading…</p>`;
+  }
 
   const banner = state.offline
     ? `<div class="banner warn" role="status">Can't reach the database. Showing what this phone last saw. If this lasts, the database may be paused: open the Supabase dashboard and press Restore.
@@ -124,13 +128,44 @@ function paint() {
   const app = document.getElementById('app');
   if (app && paintedKey === key) {
     const scroll = window.scrollY;
+    const focus = focusKey();
     app.innerHTML = body;
     window.scrollTo(0, scroll);
+    refocus(focus);
   } else {
     root.innerHTML = `${headerHtml(page)}<main class="container" id="app">${body}</main>`;
     paintedKey = key;
   }
   repaintWaiting = false;
+}
+
+// Remember which control had focus so a repaint doesn't throw keyboard and screen-reader users to the top.
+function focusKey() {
+  const el = document.activeElement;
+  const app = document.getElementById('app');
+  if (!el || !app || !app.contains(el)) return null;
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const d = el.dataset;
+  if (d.path) return `[data-path="${CSS.escape(d.path)}"]`;
+  if (d.action && d.id) return `[data-action="${CSS.escape(d.action)}"][data-id="${CSS.escape(d.id)}"]`;
+  if (d.action && d.key) return `[data-key="${CSS.escape(d.key)}"], [data-action="disarm"]`;
+  if (d.action && d.mode) return `[data-action="${CSS.escape(d.action)}"][data-mode="${CSS.escape(d.mode)}"]`;
+  if (d.action) return `[data-action="${CSS.escape(d.action)}"]`;
+  if (el.name && el.form && el.form.dataset.form) return `form[data-form="${CSS.escape(el.form.dataset.form)}"] [name="${CSS.escape(el.name)}"]`;
+  return null;
+}
+function refocus(selector) {
+  if (!selector) return;
+  const el = document.querySelector(`#app ${selector.split(', ').join(', #app ')}`);
+  if (el && !el.disabled) el.focus({ preventScroll: true });
+}
+
+// A form someone has started filling in (a balance, a new password, the landed amount).
+function formDirty() {
+  return [...document.querySelectorAll('#app form[data-form] input:not([type=hidden]), #app form[data-form] select, #app [data-input="landed"]')]
+    .some((el) => (el.tagName === 'SELECT'
+      ? [...el.options].some((o) => o.selected !== o.defaultSelected)
+      : el.value !== el.defaultValue));
 }
 
 // A live update must not wipe what someone is typing.
@@ -141,7 +176,7 @@ function typing() {
 }
 
 function paintWhenSafe() {
-  if (ui.editing || typing()) { repaintWaiting = true; return; }
+  if (ui.editing || typing() || formDirty()) { repaintWaiting = true; return; }
   paint();
 }
 
@@ -174,6 +209,7 @@ async function signedIn(newUser) {
 
 // Run a write, then reload. Shows a message instead of failing silently.
 async function act(fn, { reload = true } = {}) {
+  if (ui.busy) return;
   ui.busy = true;
   ui.notice = '';
   try {
@@ -204,12 +240,12 @@ function absorbEdits() {
 
 function startEdit() {
   if (!state || !state.plan || state.offline) return;
-  Object.assign(ui, { editing: true, draft: structuredClone(state.plan), errors: [] });
+  Object.assign(ui, { editing: true, editRoute: currentPage().route, draft: structuredClone(state.plan), errors: [] });
   paint();
 }
 
 function cancelEdit() {
-  Object.assign(ui, { editing: false, draft: null, errors: [] });
+  Object.assign(ui, { editing: false, editRoute: null, draft: null, errors: [], notice: '' });
   paint();
 }
 
@@ -230,9 +266,10 @@ async function saveEdit() {
     paint();
     return;
   }
+  ui.draft = plan;   // if the save fails, the page redraws from this, not from the old figures
   await act(async () => {
     await store.savePlan(plan);
-    Object.assign(ui, { editing: false, draft: null, errors: [] });
+    Object.assign(ui, { editing: false, editRoute: null, draft: null, errors: [] });
     toast('Saved');
   });
 }
@@ -291,7 +328,9 @@ document.addEventListener('click', async (event) => {
       applyTheme(document.body.dataset.theme !== 'dark');
       return paint();
     case 'retry':
-      return refresh();
+      ui.notice = '';
+      // Start again from the sign-in check, so a sign-in that went stale while the database was away is renewed.
+      return DEMO ? refresh() : start();
     case 'edit-start': return startEdit();
     case 'edit-cancel': return cancelEdit();
     case 'edit-save': return saveEdit();
@@ -302,8 +341,15 @@ document.addEventListener('click', async (event) => {
     }
     case 'row-remove': {
       absorbEdits();
+      const blocker = removalBlocker(ui.draft, el.dataset.list, Number(el.dataset.index));
+      if (blocker) {
+        ui.notice = blocker;
+        paint();
+        return window.scrollTo(0, 0);
+      }
       listAt(ui.draft, el.dataset.list).splice(Number(el.dataset.index), 1);
       ui.errors = [];
+      ui.notice = '';
       return paint();
     }
     case 'arm':
@@ -379,16 +425,27 @@ document.addEventListener('input', (event) => {
 
 // Catch up on a live update that arrived while someone was typing.
 document.addEventListener('focusout', () => {
-  setTimeout(() => { if (repaintWaiting && !ui.editing && !typing()) paint(); }, 0);
+  setTimeout(() => { if (repaintWaiting && !ui.editing && !typing() && !formDirty()) paint(); }, 0);
 });
 
 window.addEventListener('hashchange', () => {
+  if (ui.editing && ui.editRoute && currentPage().route !== ui.editRoute) {
+    absorbEdits();
+    history.replaceState(null, '', `#${ui.editRoute}`);
+    ui.notice = 'Save or cancel your changes before leaving this page.';
+    paint();
+    window.scrollTo(0, 0);
+    return;
+  }
   absorbEdits();
-  ui.armed = null;
-  ui.errors = [];
-  ui.notice = '';
+  Object.assign(ui, { armed: null, errors: [], notice: '', landedError: '', balanceError: '', passwordError: '', passwordDone: false });
   paint();
   window.scrollTo(0, 0);
+});
+
+// Closing the tab with unsaved changes asks first.
+window.addEventListener('beforeunload', (event) => {
+  if (ui.editing) event.preventDefault();
 });
 
 onAuthChange((event) => {
@@ -403,13 +460,42 @@ function hideSplash() {
   setTimeout(() => splash.remove(), 520);
 }
 
-(async function start() {
+async function start() {
   try {
-    const existing = DEMO ? { email: 'demo' } : (configured ? await currentUser() : null);
-    if (existing) await signedIn(existing); else paint();
+    if (DEMO) {
+      await signedIn({ email: 'demo' });
+    } else if (!configured) {
+      paint();
+    } else {
+      // Checking a stale sign-in against a database that isn't answering can take half a minute.
+      // If this device has something to show, show it after a few seconds and keep checking.
+      const showCached = (email) => {
+        user = { email };
+        ui.userEmail = email || '';
+        state = store.cached();
+        paint();
+        hideSplash();
+      };
+      const pending = sessionStatus();
+      const quick = await Promise.race([pending, new Promise((resolve) => { setTimeout(() => resolve(null), 4000); })]);
+      const email = savedEmail();
+      const waiting = !quick && email !== null && store.cached();
+      if (waiting) showCached(email);
+      const session = quick || await pending;
+      if (session.status === 'in') {
+        await signedIn(session.user);
+      } else if (session.status === 'unreachable' && store.cached()) {
+        if (!waiting) showCached(session.user.email);
+      } else if (waiting) {
+        signedOut();
+      } else {
+        paint();
+      }
+    }
   } catch (error) {
     ui.notice = error.message;
     paint();
   }
   hideSplash();
-})();
+}
+start();

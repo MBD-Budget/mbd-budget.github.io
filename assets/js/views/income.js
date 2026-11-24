@@ -120,6 +120,7 @@ function editView(plan, ui) {
       <div class="edit-line">
         <label class="lbl grow">Name ${field(ui, `${p}.name`, src.name, 'text')}</label>
         <label class="lbl">Who ${choice(ui, `${p}.personId`, src.personId, people)}</label>
+        ${removeRowButton('incomeSources', i, 'Remove this pay')}
       </div>
       <div class="edit-line">
         <label class="lbl">Take-home a fortnight ${field(ui, `${p}.takeHome`, src.takeHome, 'money')}</label>
@@ -154,6 +155,8 @@ function editView(plan, ui) {
   <div class="section">
     <h2>Pay</h2>
     ${sources}
+    <div class="form-actions">${addRowButton('incomeSources', 'Add a pay')}</div>
+    <p class="hint">A new pay has no transfers yet. Add them under Settings → The plan.</p>
   </div>
   <div class="section">
     <h2>Study loans</h2>

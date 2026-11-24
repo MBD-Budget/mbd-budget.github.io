@@ -3,7 +3,7 @@
 import { esc } from '../format.js';
 
 export function editBar(ui, { label = 'Edit figures' } = {}) {
-  if (ui.offline) return '';
+  if (ui.offline && !ui.editing) return '';
   if (!ui.editing) {
     return `<div class="edit-bar"><button class="small-btn" data-action="edit-start">${esc(label)}</button></div>`;
   }
@@ -11,7 +11,7 @@ export function editBar(ui, { label = 'Edit figures' } = {}) {
   <div class="edit-bar editing">
     <span class="edit-bar-note">Editing. Changes are shared with both phones when you save.</span>
     <button class="small-btn" data-action="edit-cancel">Cancel</button>
-    <button class="small-btn primary" data-action="edit-save"${ui.busy ? ' disabled' : ''}>Save</button>
+    <button class="small-btn primary" data-action="edit-save"${ui.busy || ui.offline ? ' disabled' : ''}>Save</button>
   </div>`;
 }
 

@@ -39,9 +39,18 @@ test('reports one error each for an unknown account, a duplicate id and a non-nu
   assert.equal(validateExport(p).length, 3);
 });
 
-test('allows at most one remainder transfer per income source', () => {
+test('allows only one "rest of this pay" transfer in the whole plan (there is one landed amount)', () => {
+  const same = clone();
+  same.plan.transfers.push({ id: 't13', incomeSourceId: 'b1', fromAccountId: 'joint', toAccountId: 'emg', amount: 0, rule: 'remainder' });
+  assert.equal(validateExport(same).length, 1);
+  const other = clone();
+  other.plan.transfers.push({ id: 't13', incomeSourceId: 'b2', fromAccountId: 'joint', toAccountId: 'emg', amount: 0, rule: 'remainder' });
+  assert.equal(validateExport(other).length, 1);
+});
+
+test('requires a budget period, so Settings can always open', () => {
   const p = clone();
-  p.plan.transfers.push({ id: 't13', incomeSourceId: 'b1', fromAccountId: 'joint', toAccountId: 'emg', amount: 0, rule: 'remainder' });
+  delete p.plan.period;
   assert.equal(validateExport(p).length, 1);
 });
 

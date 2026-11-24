@@ -13,7 +13,7 @@ function goalCard(plan, saved, today) {
   const status = g.remaining === 0
     ? '<span class="tag tag-done">Goal reached</span>'
     : g.neededPerFortnight === null
-      ? '<span class="tag tag-warn">Target date has passed</span>'
+      ? `<span class="tag tag-warn">${g.datePassed ? 'Target date has passed' : 'Less than a fortnight left'}</span>`
       : g.onTrack
         ? '<span class="tag tag-done">On track</span>'
         : '<span class="tag tag-warn">Behind the plan</span>';

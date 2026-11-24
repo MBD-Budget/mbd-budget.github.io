@@ -29,6 +29,7 @@ export async function setTick(transferId, on) {
   if (on) state.ticks.push(transferId);
 }
 export async function setLanded(amount) { state.landed = amount; }
+export function cached() { return null; }
 export async function closeFortnight() {
   const p = checklistProgress(state.plan, state.ticks, state.landed);
   if (p.done === 0) return false;

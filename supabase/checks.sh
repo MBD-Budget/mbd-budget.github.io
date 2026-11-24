@@ -7,9 +7,13 @@
 #   OUTSIDER_EMAIL, OUTSIDER_PASSWORD   a signed-in account that is NOT in `members`
 #   EXPECT_SIGNUP_OFF=1                 once sign-ups have been switched off in the dashboard
 #
-# It ticks rows and closes a fortnight, so run it only against test data.
+# The full run ticks rows, clears ticks and closes a fortnight, so use it only against test data.
+# With READ_ONLY=1 it runs only the lock-out checks (parts 1, 2 and 4), which change nothing
+# and are safe against real figures; the member sign-in is then not needed.
 set -u
-: "${SUPABASE_URL:?}" "${SUPABASE_KEY:?}" "${MEMBER_EMAIL:?}" "${MEMBER_PASSWORD:?}" "${OUTSIDER_EMAIL:?}" "${OUTSIDER_PASSWORD:?}"
+: "${SUPABASE_URL:?}" "${SUPABASE_KEY:?}" "${OUTSIDER_EMAIL:?}" "${OUTSIDER_PASSWORD:?}"
+READ_ONLY=${READ_ONLY:-0}
+if [ "$READ_ONLY" != 1 ]; then : "${MEMBER_EMAIL:?}" "${MEMBER_PASSWORD:?}"; fi
 
 TABLES="members plan ticks fortnight history balances"
 pass=0; fail=0
@@ -76,8 +80,9 @@ OUT=$(token_for "$OUTSIDER_EMAIL" "$OUTSIDER_PASSWORD")
 if [ -z "$OUT" ]; then bad "could not sign the outsider in"; else locked_out "A non-member" "$OUT"; fi
 
 echo "3. Signed in as a member"
-MEM=$(token_for "$MEMBER_EMAIL" "$MEMBER_PASSWORD")
-if [ -z "$MEM" ]; then bad "could not sign the member in"; else
+MEM=""
+if [ "$READ_ONLY" = 1 ]; then echo "  SKIP  read-only run"
+elif MEM=$(token_for "$MEMBER_EMAIL" "$MEMBER_PASSWORD"); [ -z "$MEM" ]; then bad "could not sign the member in"; else
   r=$(call GET "/rest/v1/plan?select=id" "$MEM")
   [ "$(body "$r" | json 'len(d)')" = 1 ] && ok "A member can read the plan" || bad "A member cannot read the plan"
   call DELETE "/rest/v1/ticks?transfer_id=neq." "$MEM" >/dev/null

@@ -1203,3 +1203,6 @@ h3.form-title.spaced { margin-top: 1.4rem; }
 .legend-swatch.dashed { border-top-style: dashed; border-top-width: 2px; }
 .legend-swatch.target { border-top: 2px dotted var(--text-3); }
 @media (max-width: 420px) { .facts { grid-template-columns: repeat(2, auto); } }
+
+/* Review fixes: 16px inputs stop iOS zooming in when a field is focused */
+.form-input, .signin-card .form-input, .landed-line .form-input, select.form-input { font-size: 16px; }

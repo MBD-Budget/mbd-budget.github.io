@@ -199,6 +199,9 @@ test('goalProgress never gives a silly number once the date has passed or the go
   const soon = c.goalProgress({ target: 26000, targetDate: '2026-11-30' }, 3000, TODAY, 2000);
   assert.equal(soon.fortnightsLeft, 0);
   assert.equal(soon.neededPerFortnight, null);
+  assert.equal(soon.datePassed, false);
+  assert.equal(past.datePassed, true);
+  assert.equal(c.goalProgress({ target: 26000, targetDate: TODAY }, 3000, TODAY, 2000).datePassed, false);
 });
 
 test('ingCheck flags a month where the deposit account is not above last month\'s close', () => {
