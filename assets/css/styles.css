@@ -1082,3 +1082,38 @@ h3.form-title.sub { margin: .4rem 0 0; }
 .bnav-item.active { box-shadow: inset 0 3px 0 var(--h1-color); }
 body[data-theme="light"] .bnav-item.active { color: var(--text); }
 body[data-theme="light"] .bnav-item { color: var(--text-2); }
+
+/* Cost of living */
+.stat-cards.three .stat-value { word-break: normal; font-variant-numeric: tabular-nums; }
+.period-btn { min-height: 36px; }
+.hbars { list-style: none; display: flex; flex-direction: column; gap: .7rem; }
+.hbar-head { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; }
+.hbar-name { font-size: .88rem; font-weight: 600; overflow-wrap: anywhere; }
+.hbar-nums { flex-shrink: 0; white-space: nowrap; }
+.hbar-nums .num { font-size: .9rem; }
+.hbar-share { display: inline-block; min-width: 2.4rem; text-align: right; font-size: .76rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.hbar-track { height: 8px; border-radius: 999px; background: var(--bg-3); margin-top: .3rem; overflow: hidden; }
+.hbar-fill { height: 100%; border-radius: 999px; background: var(--h1-color); }
+
+.table-card { padding: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.money-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+.money-table th, .money-table td { padding: .6rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.money-table th:first-child { padding-left: 1.1rem; text-align: left; }
+.money-table td:last-child, .money-table thead th:last-child { padding-right: 1.1rem; }
+.money-table thead th {
+  font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-2); text-align: right; white-space: nowrap;
+}
+.money-table td { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.money-table tbody th { font-weight: 400; }
+.cell-name { display: block; font-weight: 600; font-size: .9rem; overflow-wrap: anywhere; }
+.cell-basis { display: block; font-size: .76rem; color: var(--text-2); margin-top: .1rem; }
+.money-table tfoot th, .money-table tfoot td {
+  background: var(--bg-3); border-bottom: none; font-family: var(--font); font-weight: 800;
+}
+.money-table tfoot th { text-transform: uppercase; letter-spacing: .06em; font-size: .8rem; }
+.linked-value {
+  font-family: var(--font); font-weight: 800; font-size: 1rem; color: var(--text);
+  text-transform: none; letter-spacing: 0; padding: .45rem 0; font-variant-numeric: tabular-nums;
+}
+.lbl .row-note { text-transform: none; letter-spacing: 0; font-weight: 400; }

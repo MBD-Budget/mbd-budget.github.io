@@ -21,7 +21,7 @@ function fieldError(ui, path) {
 }
 
 // An input whose value is written back to `path` in the plan on Save.
-export function field(ui, path, value, type = 'money', { label = '', width = '', placeholder = '' } = {}) {
+export function field(ui, path, value, type = 'money', { label = '', width = '', placeholder = '', attrs = '' } = {}) {
   const shown = value === null || value === undefined ? '' : value;
   const numeric = type === 'money' || type === 'moneyOrNull' || type === 'number';
   const inputType = type === 'date' || type === 'dateOrNull' ? 'date' : 'text';
@@ -29,7 +29,7 @@ export function field(ui, path, value, type = 'money', { label = '', width = '',
   return `<span class="field${width ? ` field-${width}` : ''}">
     <input class="form-input${bad ? ' invalid' : ''}" type="${inputType}" ${numeric ? 'inputmode="decimal"' : ''}
       data-path="${esc(path)}" data-type="${esc(type)}" value="${esc(shown)}"
-      ${label ? `aria-label="${esc(label)}"` : ''} ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} autocomplete="off" />
+      ${label ? `aria-label="${esc(label)}"` : ''} ${placeholder ? `placeholder="${esc(placeholder)}"` : ''} ${attrs} autocomplete="off" />
     ${fieldError(ui, path)}
   </span>`;
 }

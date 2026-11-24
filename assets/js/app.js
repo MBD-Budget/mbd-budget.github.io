@@ -373,7 +373,7 @@ document.addEventListener('change', (event) => {
 document.addEventListener('input', (event) => {
   const el = event.target;
   const handler = el.dataset && pageActions[`input:${el.dataset.input}`];
-  if (handler) handler({ el, state, ui, paint });
+  if (handler) handler({ el, state, ui, paint, parseMoney });
 });
 
 // Catch up on a live update that arrived while someone was typing.
