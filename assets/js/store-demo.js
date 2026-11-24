@@ -1,7 +1,7 @@
 // A stand-in for store.js that keeps everything in memory, seeded with made-up figures.
 // Open the app with ?demo to use it. Nothing is saved and no database is touched.
 import { validateExport } from './plan.js';
-import { checklistProgress } from './compute.js';
+import { checklistProgress, payDebts } from './compute.js';
 import { isoToday } from './format.js';
 
 export class SignedOutError extends Error {}
@@ -33,7 +33,8 @@ export function cached() { return null; }
 export async function closeFortnight() {
   const p = checklistProgress(state.plan, state.ticks, state.landed);
   if (p.done === 0) return false;
-  state.history.unshift({ id: nextId++, closedOn: isoToday(), transfersDone: p.done, transfersTotal: p.total, depositTransferred: p.depositTransferred });
+  state.history.unshift({ id: nextId++, closedOn: isoToday(), transfersDone: p.done, transfersTotal: p.total, depositTransferred: p.depositTransferred, debtPaid: p.debtPaid });
+  if (p.debtPaid > 0) state.plan.debts = payDebts(state.plan.debts, p.debtPaid).debts;
   state.ticks = [];
   state.landed = null;
   state.startedOn = isoToday();
@@ -50,8 +51,8 @@ export async function exportAll() {
     version: 1,
     plan: structuredClone(state.plan),
     balances: state.balances.map(({ accountId, onDate, balance }) => ({ accountId, onDate, balance })),
-    history: [...state.history].reverse().map(({ closedOn, transfersDone, transfersTotal, depositTransferred }) =>
-      ({ closedOn, transfersDone, transfersTotal, depositTransferred })),
+    history: [...state.history].reverse().map(({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid }) =>
+      ({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid: debtPaid || 0 })),
   };
 }
 export async function importAll(obj) {

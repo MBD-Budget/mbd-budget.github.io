@@ -91,3 +91,20 @@ test('newId gives a prefixed id that does not repeat', () => {
   assert.match(a, /^t-[a-z0-9]+$/);
   assert.notEqual(a, b);
 });
+
+test('debts are optional, and each one needs a name and an amount owing', () => {
+  const ok = clone();
+  ok.plan.debts = [{ id: 'd1', name: 'Card', owing: 1000 }, { id: 'd2', name: 'Loan', owing: 0 }];
+  assert.deepEqual(validateExport(ok), []);
+  const bad = clone();
+  bad.plan.debts = [{ id: 'd1', name: 'Card', owing: 'some' }, { id: 'd1', name: '', owing: 5 }];
+  assert.equal(validateExport(bad).length, 3);
+});
+
+test('history may record what went to debts', () => {
+  const p = clone();
+  p.history.push({ closedOn: '2026-11-20', transfersDone: 3, transfersTotal: 11, depositTransferred: 0, debtPaid: 2200 });
+  assert.deepEqual(validateExport(p), []);
+  p.history.push({ closedOn: '2026-11-20', transfersDone: 3, transfersTotal: 11, depositTransferred: 0, debtPaid: 'x' });
+  assert.equal(validateExport(p).length, 1);
+});

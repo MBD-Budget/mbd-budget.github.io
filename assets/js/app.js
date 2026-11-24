@@ -336,6 +336,7 @@ document.addEventListener('click', async (event) => {
     case 'edit-save': return saveEdit();
     case 'row-add': {
       absorbEdits();
+      if (el.dataset.list === 'debts' && !Array.isArray(ui.draft.debts)) ui.draft.debts = [];
       listAt(ui.draft, el.dataset.list).push(blankRow(el.dataset.list, ui.draft));
       return paint();
     }

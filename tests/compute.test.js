@@ -131,10 +131,10 @@ test('checklistGroups orders by week of the fortnight, then day of the week', ()
 });
 
 test('checklistProgress counts ticks and the deposit, ignoring money that stays and stale ticks', () => {
-  assert.deepEqual(c.checklistProgress(plan, [], null), { done: 0, total: 11, depositTransferred: 0 });
-  assert.deepEqual(c.checklistProgress(plan, ['t1', 't8', 't9'], 1100), { done: 3, total: 11, depositTransferred: 2200 });
-  assert.deepEqual(c.checklistProgress(plan, ['t1', 'gone', 't6'], null), { done: 1, total: 11, depositTransferred: 700 });
-  assert.deepEqual(c.checklistProgress(plan, ['t2', 't11'], null), { done: 2, total: 11, depositTransferred: 0 });
+  assert.deepEqual(c.checklistProgress(plan, [], null), { done: 0, total: 11, depositTransferred: 0, debtPaid: 0 });
+  assert.deepEqual(c.checklistProgress(plan, ['t1', 't8', 't9'], 1100), { done: 3, total: 11, depositTransferred: 2200, debtPaid: 0 });
+  assert.deepEqual(c.checklistProgress(plan, ['t1', 'gone', 't6'], null), { done: 1, total: 11, depositTransferred: 700, debtPaid: 0 });
+  assert.deepEqual(c.checklistProgress(plan, ['t2', 't11'], null), { done: 2, total: 11, depositTransferred: 0, debtPaid: 0 });
 });
 
 // ---- Savings ------------------------------------------------------------------
@@ -229,4 +229,74 @@ test('ingCheck cannot judge without a balance from last month', () => {
   assert.equal(r.ok, null);
   assert.equal(r.deadline, '2027-01-31');
   assert.equal(c.ingCheck(plan, [], [], '2027-02-10').deadline, '2027-02-28');
+});
+
+// ---- Debts to clear before saving --------------------------------------------------
+const withDebts = (...debts) => ({ ...structuredClone(plan), debts: debts.map(([id, name, owing]) => ({ id, name, owing })) });
+const two = withDebts(['d1', 'Card', 1000], ['d2', 'Loan', 1500]);
+
+test('payDebts pays debts in list order and hands back what is left over', () => {
+  assert.deepEqual(c.payDebts(two.debts, 2200), {
+    debts: [{ id: 'd1', name: 'Card', owing: 0 }, { id: 'd2', name: 'Loan', owing: 300 }], paid: 2200, left: 0,
+  });
+  const over = c.payDebts(two.debts, 3000);
+  assert.equal(over.paid, 2500);
+  assert.equal(over.left, 500);
+  assert.deepEqual(c.payDebts([], 700), { debts: [], paid: 0, left: 700 });
+  assert.deepEqual(c.payDebts(undefined, 700), { debts: [], paid: 0, left: 700 });
+  assert.equal(two.debts[0].owing, 1000, 'the original list is not changed');
+});
+
+test('debtSummary says how much is owing and how many fortnights of saving it takes', () => {
+  const s = c.debtSummary(two);
+  assert.equal(s.total, 2500);
+  assert.equal(s.fortnightsToClear, 2);
+  assert.equal(s.savedInLastFortnight, 1500);
+  assert.equal(c.debtSummary(plan).total, 0);
+  assert.equal(c.debtSummary(plan).fortnightsToClear, 0);
+  const stuck = withDebts(['d1', 'Card', 1000]);
+  stuck.savings.perFortnight = 0;
+  assert.equal(c.debtSummary(stuck).fortnightsToClear, null);
+});
+
+test('checklistProgress sends house-deposit money to debts first', () => {
+  assert.deepEqual(c.checklistProgress(two, ['t1', 't8', 't9'], 1100), { done: 3, total: 11, depositTransferred: 0, debtPaid: 2200 });
+  const small = withDebts(['d1', 'Card', 1000]);
+  assert.deepEqual(c.checklistProgress(small, ['t1', 't8', 't9'], 1100), { done: 3, total: 11, depositTransferred: 1200, debtPaid: 1000 });
+  assert.deepEqual(c.checklistProgress(two, ['t2', 't11'], 1100), { done: 2, total: 11, depositTransferred: 0, debtPaid: 0 });
+});
+
+test('checklistGroups says where each house-deposit transfer should go while debts are owing', () => {
+  const routing = (p, landed) => Object.fromEntries(c.checklistGroups(p, [], landed).flatMap((g) => g.rows).filter((r) => r.routing).map((r) => [r.transfer.id, r.routing]));
+  assert.deepEqual(routing(two, 1100), {
+    t1: [{ name: 'Card', amount: 700, isDebt: true }],
+    t8: [{ name: 'Card', amount: 300, isDebt: true }, { name: 'Loan', amount: 600, isDebt: true }],
+    t9: [{ name: 'Loan', amount: 600, isDebt: true }],
+  });
+  const small = withDebts(['d1', 'Card', 1000]);
+  assert.deepEqual(routing(small, 1100), {
+    t1: [{ name: 'Card', amount: 700, isDebt: true }],
+    t8: [{ name: 'Card', amount: 300, isDebt: true }, { name: 'Deposit saver', amount: 600, isDebt: false }],
+  });
+  assert.deepEqual(routing(plan, 1100), {});
+  const cleared = withDebts(['d1', 'Card', 0]);
+  assert.deepEqual(routing(cleared, 1100), {});
+});
+
+test('the projection stays flat until the debts are cleared', () => {
+  const s = c.savingsSeries(two, balances, [], TODAY);
+  assert.deepEqual(s.projection.slice(0, 4), [
+    { date: TODAY, amount: 3000 }, { date: '2026-12-08', amount: 3000 },
+    { date: '2026-12-22', amount: 4500 }, { date: '2027-01-05', amount: 6500 },
+  ]);
+});
+
+test('goalProgress counts debts as part of what still has to be found', () => {
+  const g = c.goalProgress(plan.goals[0], 3000, TODAY, 2000, 2500);
+  near(g.neededPerFortnight, 25500 / 13);
+  assert.equal(g.onTrack, true);
+  assert.equal(c.goalProgress(plan.goals[0], 3000, TODAY, 1900, 2500).onTrack, false);
+  assert.equal(g.remaining, 23000);
+  const met = c.goalProgress(plan.goals[0], 30000, TODAY, 2000, 2500);
+  assert.equal(met.neededPerFortnight, 0);
 });

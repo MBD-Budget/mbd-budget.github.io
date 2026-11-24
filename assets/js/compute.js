@@ -77,6 +77,37 @@ export function barData(plan, mode) {
   return rows.map((r) => ({ ...r, share: r.amount / total }));
 }
 
+// ---- Debts to clear before saving ---------------------------------------------
+const cents = (n) => Math.round(n * 100) / 100;
+
+// Pay debts in list order. Returns the reduced list, what was paid, and what is left over.
+export function payDebts(debts, amount) {
+  let left = amount;
+  const next = (debts || []).map((debt) => {
+    const pay = Math.min(debt.owing || 0, left);
+    left = cents(left - pay);
+    return { ...debt, owing: cents((debt.owing || 0) - pay) };
+  });
+  return { debts: next, paid: cents(amount - left), left };
+}
+
+export const debtsOwing = (plan) => cents(sum(plan.debts || [], (d) => d.owing));
+
+export function debtSummary(plan) {
+  const total = debtsOwing(plan);
+  const perFortnight = (plan.savings && plan.savings.perFortnight) || 0;
+  let fortnightsToClear = 0;
+  if (total > 0) fortnightsToClear = perFortnight > 0 ? Math.ceil(total / perFortnight) : null;
+  return {
+    debts: (plan.debts || []).map((d) => ({ id: d.id, name: d.name, owing: d.owing || 0 })),
+    total,
+    perFortnight,
+    fortnightsToClear,
+    // What is left for the house deposit in the fortnight the debts are finished.
+    savedInLastFortnight: fortnightsToClear ? cents(perFortnight * fortnightsToClear - total) : 0,
+  };
+}
+
 // ---- Payday checklist ---------------------------------------------------------
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const dayIndex = (name) => {
@@ -104,6 +135,25 @@ export function checklistGroups(plan, ticks, landed) {
   const people = byId(plan.people);
   const ticked = new Set(ticks);
   const name = (id) => (accounts.get(id) ? accounts.get(id).name : '');
+  const depositIds = new Set(plan.accounts.filter((a) => a.role === 'deposit').map((a) => a.id));
+  // While debts are owing, house-deposit transfers go to them first, in checklist order.
+  let owing = (plan.debts || []).filter((d) => d.owing > 0).map((d) => ({ name: d.name, owing: d.owing }));
+  const anyOwing = owing.length > 0;
+  const route = (transfer, amount) => {
+    if (!anyOwing || !depositIds.has(transfer.toAccountId) || !owing.length) return null;
+    const parts = [];
+    let left = amount;
+    owing = owing.filter((debt) => {
+      if (left <= 0) return true;
+      const pay = Math.min(debt.owing, left);
+      parts.push({ name: debt.name, amount: cents(pay), isDebt: true });
+      left = cents(left - pay);
+      debt.owing = cents(debt.owing - pay);
+      return debt.owing > 0;
+    });
+    if (left > 0) parts.push({ name: name(transfer.toAccountId), amount: left, isDebt: false });
+    return parts.some((part) => part.isDebt) ? parts : null;
+  };
   return plan.incomeSources
     .map((source, index) => ({ source, index }))
     .sort((a, b) => (a.source.weekOfFortnight - b.source.weekOfFortnight)
@@ -118,6 +168,7 @@ export function checklistGroups(plan, ticks, landed) {
           toName: name(transfer.toAccountId),
           ticked: ticked.has(transfer.id),
           tickable: !isEstimate,
+          routing: route(transfer, amount),
         };
       });
       return {
@@ -144,7 +195,8 @@ export function checklistProgress(plan, ticks, landed) {
     const { amount, isEstimate } = transferAmount(plan, transfer, landed);
     if (!isEstimate) depositTransferred += amount;   // an unlanded "rest" is worth nothing yet
   }
-  return { done, total: real.length, depositTransferred: Math.round(depositTransferred * 100) / 100 };
+  const { paid, left } = payDebts(plan.debts, cents(depositTransferred));
+  return { done, total: real.length, depositTransferred: left, debtPaid: paid };
 }
 
 // ---- Savings ------------------------------------------------------------------
@@ -184,23 +236,25 @@ export function savingsSeries(plan, balances, history, today) {
   const saved = running;
 
   const perFortnight = (plan.savings && plan.savings.perFortnight) || 0;
+  const owing = debtsOwing(plan);
   const end = (plan.goals || []).reduce((max, g) => (g.targetDate > max ? g.targetDate : max), today);
   const projection = [{ date: today, amount: saved }];
   for (let i = 1; i <= 260; i += 1) {
     const date = addDays(today, i * 14);
     if (date > end) break;
-    projection.push({ date, amount: saved + perFortnight * i });
+    projection.push({ date, amount: saved + Math.max(0, perFortnight * i - owing) });
   }
   return { actual, projection, saved };
 }
 
-export function goalProgress(goal, saved, today, perFortnight = 0) {
+// `owing` is debt that has to be cleared from the same money before any of it is saved.
+export function goalProgress(goal, saved, today, perFortnight = 0, owing = 0) {
   const remaining = Math.max(0, goal.target - saved);
   const fortnightsLeft = Math.max(0, Math.floor(daysBetween(today, goal.targetDate) / 14));
   let neededPerFortnight;
   if (remaining === 0) neededPerFortnight = 0;
   else if (fortnightsLeft === 0) neededPerFortnight = null;
-  else neededPerFortnight = remaining / fortnightsLeft;
+  else neededPerFortnight = (remaining + owing) / fortnightsLeft;
   return {
     pct: goal.target > 0 ? Math.min(1, saved / goal.target) : 1,
     remaining,

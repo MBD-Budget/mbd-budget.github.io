@@ -68,8 +68,9 @@ test('classifyError tells a dropped connection from an expired sign-in', () => {
 import { blankRow, validatePlan } from '../assets/js/plan.js';
 
 test('a blank row added to any list leaves the plan valid', () => {
-  for (const list of ['loans', 'categories', 'fuel.trips', 'goals', 'accounts', 'transfers', 'incomeSources', 'incomeSources.0.sacrifices']) {
+  for (const list of ['loans', 'categories', 'fuel.trips', 'goals', 'accounts', 'transfers', 'incomeSources', 'incomeSources.0.sacrifices', 'debts']) {
     const plan = structuredClone(example);
+    plan.debts = plan.debts || [];
     const target = list.split('.').reduce((o, k) => o[k], plan);
     const before = target.length;
     target.push(blankRow(list, plan));

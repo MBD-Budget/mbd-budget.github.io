@@ -111,6 +111,13 @@ export function validatePlan(plan) {
     if (!isDate(g.targetDate)) errors.push(`Goal "${g.name || g.id}" needs a target date.`);
   }
 
+  if (plan.debts !== undefined && plan.debts !== null) {
+    for (const d of checkList(errors, plan.debts, 'Debt')) {
+      if (!isText(d.name)) errors.push('A debt needs a name.');
+      if (!isNum(d.owing)) errors.push(`Debt "${d.name || d.id}" needs an amount owing.`);
+    }
+  }
+
   if (!plan.savings || !isNum(plan.savings.perFortnight)) {
     errors.push('Savings needs an amount per fortnight.');
   }
@@ -129,7 +136,7 @@ export function validateExport(obj) {
     }
   });
   (obj.history || []).forEach((h, i) => {
-    if (!h || !isDate(h.closedOn) || ![h.transfersDone, h.transfersTotal, h.depositTransferred].every(isNum)) {
+    if (!h || !isDate(h.closedOn) || ![h.transfersDone, h.transfersTotal, h.depositTransferred].every(isNum) || !isNumOrNull(h.debtPaid)) {
       errors.push(`History entry ${i + 1} needs a date and three numbers.`);
     }
   });
@@ -260,6 +267,8 @@ export function blankRow(list, plan) {
       return { id: newId('f'), name: 'New trip', car: '', returnKm: 0, tripsPerWeek: 0, litresPer100: 0 };
     case 'goals':
       return { id: newId('g'), name: 'New goal', target: 0, targetDate: (plan.period && plan.period.end) || '2027-12-31' };
+    case 'debts':
+      return { id: newId('d'), name: 'New debt', owing: 0 };
     case 'accounts':
       return { id: newId('a'), name: 'New account', job: '', role: 'none' };
     case 'transfers': {

@@ -1206,3 +1206,11 @@ h3.form-title.spaced { margin-top: 1.4rem; }
 
 /* Review fixes: 16px inputs stop iOS zooming in when a field is focused */
 .form-input, .signin-card .form-input, .landed-line .form-input, select.form-input { font-size: 16px; }
+
+/* Debts first */
+.debt-note { font-size: .84rem; color: var(--text-2); line-height: 1.45; }
+.debt-note strong { color: var(--text); }
+.tick-route { font-size: .8rem; font-weight: 600; color: var(--text); }
+.tick-to .tag { margin-left: .25rem; }
+.banner.block { display: block; }
+.progress-right .num-sub { white-space: normal; }

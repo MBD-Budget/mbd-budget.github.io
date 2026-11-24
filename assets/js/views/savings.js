@@ -1,5 +1,5 @@
 import { esc, money, money0, shortDate, pct } from '../format.js';
-import { savingsSeries, accountSeries, goalProgress, ingCheck, depositAccount, emergencyAccount } from '../compute.js';
+import { savingsSeries, accountSeries, goalProgress, ingCheck, depositAccount, emergencyAccount, debtSummary, addDays } from '../compute.js';
 import { ring, lineChart } from '../charts.js';
 import { editBar, field, addRowButton, removeRowButton, confirmButton } from './shared.js';
 
@@ -7,8 +7,9 @@ function goalCard(plan, saved, today) {
   const goals = plan.goals || [];
   if (!goals.length) return '<div class="card"><p class="hint">No goal set yet. Use Edit figures to add one.</p></div>';
   const perFortnight = plan.savings.perFortnight;
+  const owing = debtSummary(plan).total;
   const [first, ...rest] = goals;
-  const g = goalProgress(first, saved, today, perFortnight);
+  const g = goalProgress(first, saved, today, perFortnight, owing);
   const needed = g.neededPerFortnight === null ? '–' : money0(g.neededPerFortnight);
   const status = g.remaining === 0
     ? '<span class="tag tag-done">Goal reached</span>'
@@ -18,7 +19,7 @@ function goalCard(plan, saved, today) {
         ? '<span class="tag tag-done">On track</span>'
         : '<span class="tag tag-warn">Behind the plan</span>';
   const others = rest.map((goal) => {
-    const o = goalProgress(goal, saved, today, perFortnight);
+    const o = goalProgress(goal, saved, today, perFortnight, owing);
     return `
     <div class="row">
       <div class="row-main grow">
@@ -37,13 +38,48 @@ function goalCard(plan, saved, today) {
       <div class="row-sub">By ${shortDate(first.targetDate)}</div>
       <dl class="facts">
         <div><dt>Fortnights left</dt><dd>${g.fortnightsLeft}</dd></div>
-        <div><dt>Needed a fortnight</dt><dd>${needed}</dd></div>
+        <div><dt>Needed a fortnight${owing > 0 ? ', debts included' : ''}</dt><dd>${needed}</dd></div>
         <div><dt>Planned a fortnight</dt><dd>${money0(perFortnight)}</dd></div>
       </dl>
       ${status}
     </div>
   </div>
   ${others ? `<div class="card rows">${others}</div>` : ''}`;
+}
+
+function debtPanel(plan, today) {
+  const d = debtSummary(plan);
+  if (!d.debts.length) return '';
+  const rows = d.debts.map((debt, i) => `
+    <div class="row">
+      <div class="row-main">
+        <span class="row-title">${esc(debt.name)}</span>
+        <span class="row-sub">${debt.owing > 0 ? (i === d.debts.findIndex((x) => x.owing > 0) ? 'Pay this one first' : 'Next in line') : 'Cleared'}</span>
+      </div>
+      <div class="row-nums"><span class="num">${debt.owing > 0 ? money(debt.owing) : '✓'}</span></div>
+    </div>`).join('');
+  let plain;
+  if (d.total === 0) {
+    plain = '<strong>All debts cleared.</strong> Everything sent to the house deposit now counts as saved.';
+  } else if (d.fortnightsToClear === null) {
+    plain = `<strong>${money(d.total)} to clear before saving starts.</strong> Set a planned saving a fortnight under Edit goals to see how long it takes.`;
+  } else {
+    const n = d.fortnightsToClear;
+    plain = `<strong>${money(d.total)} to clear before saving starts.</strong> At ${money0(d.perFortnight)} a fortnight that takes ${n} fortnight${n === 1 ? '' : 's'}, to about ${shortDate(addDays(today, n * 14))}.${d.savedInLastFortnight > 0 ? ` The last of those still leaves ${money0(d.savedInLastFortnight)} for the deposit.` : ''}`;
+  }
+  return `
+  <div class="section">
+    <h2>Debts to clear first</h2>
+    <div class="banner ${d.total === 0 ? 'ok' : 'warn'} plain block" role="status"><span>${plain}</span></div>
+    <div class="card rows">
+      ${rows}
+      <div class="row row-total">
+        <div class="row-main"><span class="row-title">Still owing</span></div>
+        <div class="row-nums"><span class="num">${money(d.total)}</span></div>
+      </div>
+    </div>
+    <p class="hint">House-deposit transfers on the checklist go to these, in this order, until they are cleared. Each reset takes what was paid off the amounts here.</p>
+  </div>`;
 }
 
 function ingPanel(plan, state, today) {
@@ -83,7 +119,7 @@ function charts(plan, state, today) {
   return `
   <div class="section">
     <h2>Savings over time</h2>
-    <p class="hint page-hint">Logged balances, then a projection at ${money0(plan.savings.perFortnight)} a fortnight from today.</p>
+    <p class="hint page-hint">Logged balances, then a projection at ${money0(plan.savings.perFortnight)} a fortnight from today${debtSummary(plan).total > 0 ? ', flat until the debts are cleared' : ''}.</p>
     <div class="card">${lineChart([
       { name: 'Saved so far', points: series.actual },
       { name: 'Projection', points: projection, dashed: true },
@@ -148,6 +184,19 @@ function editView(plan, ui) {
     </div>`).join('');
   return `
   <div class="section">
+    <h2>Debts to clear first</h2>
+    <p class="hint page-hint">Paid from the house-deposit money, in this order, before anything counts as saved. Put the one to pay first at the top. "Still owing" goes down by itself at each reset, and you can correct it here any time.</p>
+    ${(plan.debts || []).map((debt, i) => `
+    <div class="card edit-card">
+      <div class="edit-line">
+        <label class="lbl grow">Debt ${field(ui, `debts.${i}.name`, debt.name, 'text')}</label>
+        <label class="lbl narrow">Still owing ${field(ui, `debts.${i}.owing`, debt.owing, 'money')}</label>
+        ${removeRowButton('debts', i, 'Remove this debt')}
+      </div>
+    </div>`).join('') || '<p class="hint">No debts listed.</p>'}
+    <div class="form-actions">${addRowButton('debts', 'Add a debt')}</div>
+  </div>
+  <div class="section">
     <h2>Goals</h2>
     <p class="hint page-hint">The first goal drives the ring and "needed a fortnight". Every goal is drawn as a line on the chart.</p>
     ${goals}
@@ -169,6 +218,7 @@ export function render(state, ui) {
   return `
   <h1>Savings</h1>
   ${editBar(ui, { label: 'Edit goals' })}
+  ${debtPanel(plan, today)}
   ${goalCard(plan, saved, today)}
   ${ingPanel(plan, state, today)}
   ${charts(plan, state, today)}

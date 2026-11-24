@@ -39,6 +39,9 @@ create table if not exists public.history (
   closed_by           uuid default auth.uid()
 );
 
+-- What went to debts instead of the house deposit that fortnight.
+alter table public.history add column if not exists debt_paid numeric(12,2) not null default 0 check (debt_paid >= 0);
+
 create table if not exists public.balances (
   id         bigint generated always as identity primary key,
   account_id text not null,
@@ -117,6 +120,12 @@ declare
   v_total   integer;
   v_deposit numeric;
   v_row     public.history;
+  v_debt    jsonb;
+  v_debts   jsonb := '[]'::jsonb;
+  v_owing   numeric;
+  v_pay     numeric;
+  v_left    numeric;
+  v_paid    numeric := 0;
   v_today   date := case when p_today is not null and abs(p_today - current_date) <= 1 then p_today else current_date end;
 begin
   if not public.is_member() then
@@ -168,8 +177,22 @@ begin
     raise exception 'nothing to close';
   end if;
 
-  insert into public.history (closed_on, transfers_done, transfers_total, deposit_transferred)
-  values (v_today, v_done, v_total, round(v_deposit, 2))
+  -- Debts come first: house-deposit money pays them down in list order, and only what is
+  -- left counts as saved. The amounts owing in the plan are reduced to match.
+  v_left := round(v_deposit, 2);
+  for v_debt in select value from jsonb_array_elements(coalesce(v_plan -> 'debts', '[]'::jsonb)) loop
+    v_owing := greatest(coalesce((v_debt ->> 'owing')::numeric, 0), 0);
+    v_pay := least(v_owing, v_left);
+    v_left := v_left - v_pay;
+    v_paid := v_paid + v_pay;
+    v_debts := v_debts || jsonb_build_array(jsonb_set(v_debt, '{owing}', to_jsonb(round(v_owing - v_pay, 2))));
+  end loop;
+  if v_paid > 0 then
+    update public.plan set data = jsonb_set(data, '{debts}', v_debts), updated_at = now() where id = 1;
+  end if;
+
+  insert into public.history (closed_on, transfers_done, transfers_total, deposit_transferred, debt_paid)
+  values (v_today, v_done, v_total, round(v_left, 2), round(v_paid, 2))
   returning * into v_row;
 
   delete from public.ticks where true;

@@ -1,9 +1,12 @@
 import { esc, money, shortDate, isoToday } from '../format.js';
-import { checklistGroups, checklistProgress } from '../compute.js';
+import { checklistGroups, checklistProgress, debtsOwing } from '../compute.js';
 import { confirmButton } from './shared.js';
 
-function progressCard(p) {
+function progressCard(p, owing) {
   const share = p.total ? p.done / p.total : 0;
+  const debtsFirst = owing > 0;
+  const rightLabel = debtsFirst ? 'To debts this fortnight' : 'House deposit this fortnight';
+  const rightAmount = debtsFirst ? p.debtPaid : p.depositTransferred;
   return `
   <div class="card progress-card${p.total && p.done === p.total ? ' done' : ''}">
     <div class="progress-top">
@@ -12,10 +15,12 @@ function progressCard(p) {
         <span class="progress-count"><strong>${p.done}</strong> of ${p.total}</span>
       </div>
       <div class="progress-right">
-        <span class="stat-label">House deposit this fortnight</span>
-        <span class="progress-count"><strong>${money(p.depositTransferred)}</strong></span>
+        <span class="stat-label">${rightLabel}</span>
+        <span class="progress-count"><strong>${money(rightAmount)}</strong></span>
+        ${debtsFirst && p.depositTransferred > 0 ? `<span class="num-sub">plus ${money(p.depositTransferred)} to the deposit</span>` : ''}
       </div>
     </div>
+    ${debtsFirst ? `<p class="debt-note"><strong>Debts first.</strong> ${money(Math.max(0, owing - p.debtPaid))} still owing after what is ticked. House-deposit transfers go to the debts until they are cleared.</p>` : ''}
     <div class="prog-track" role="progressbar" aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}" aria-label="Transfers done">
       <div class="prog-bar" style="width:${Math.round(share * 100)}%"></div>
     </div>
@@ -28,12 +33,19 @@ function group(g, state, ui) {
   const rows = g.rows.map((r) => {
     const locked = (!r.tickable && !r.ticked) || ui.offline;
     const amount = r.isEstimate ? `about ${money(r.amount)}` : money(r.amount);
+    const routing = r.routing
+      ? `<span class="tick-route">${r.isEstimate ? 'About ' : ''}${r.routing.map((part) => `${money(part.amount)} to ${esc(part.name)}`).join(', then ')}</span>`
+      : '';
+    const title = r.routing
+      ? `${esc(r.routing.filter((part) => part.isDebt).map((part) => part.name).join(' and '))} <span class="tag tag-warn">Debts first</span>`
+      : esc(r.toName);
     return `
     <button class="tick-row${r.ticked ? ' ticked' : ''}" role="checkbox" aria-checked="${r.ticked}" data-action="tick" data-id="${esc(r.transfer.id)}"${locked ? ' disabled' : ''}>
       <span class="tick-box" aria-hidden="true">${r.ticked ? '✓' : ''}</span>
       <span class="tick-main">
-        <span class="tick-to">${esc(r.toName)}</span>
-        <span class="tick-from">from ${esc(r.fromName)}${r.transfer.rule === 'remainder' ? ' · the rest of this pay' : ''}</span>
+        <span class="tick-to">${title}</span>
+        <span class="tick-from">from ${esc(r.fromName)}${r.transfer.rule === 'remainder' ? ' · the rest of this pay' : ''}${r.routing ? ` · instead of ${esc(r.toName)}` : ''}</span>
+        ${routing}
         ${!r.tickable && !r.ticked ? '<span class="tick-hint">Enter the amount that landed first</span>' : ''}
       </span>
       <span class="tick-amount">${amount}</span>
@@ -80,7 +92,10 @@ function history(list) {
         <span class="row-title">${shortDate(h.closedOn)}</span>
         <span class="row-sub">${h.transfersDone} of ${h.transfersTotal} transfers done</span>
       </div>
-      <div class="row-nums"><span class="num">${money(h.depositTransferred)}</span><span class="num-sub">to the deposit</span></div>
+      <div class="row-nums">
+        ${h.debtPaid > 0 ? `<span class="num">${money(h.debtPaid)}</span><span class="num-sub">to debts</span>` : ''}
+        ${h.debtPaid > 0 && !(h.depositTransferred > 0) ? '' : `<span class="num">${money(h.depositTransferred)}</span><span class="num-sub">to the deposit</span>`}
+      </div>
     </div>`).join('')}</div>`;
 }
 
@@ -91,12 +106,12 @@ export function render(state, ui) {
   return `
   <h1>Checklist</h1>
   ${state.startedOn ? `<p class="hint centre">This fortnight started ${shortDate(state.startedOn)}</p>` : ''}
-  ${progressCard(progress)}
+  ${progressCard(progress, debtsOwing(plan))}
   ${groups.map((g) => group(g, state, ui)).join('')}
 
   <div class="section reset-section">
     <div class="card">
-      <p class="hint">When the fortnight is finished, reset. It saves this fortnight to the history below and clears every tick, on both phones.</p>
+      <p class="hint">When the fortnight is finished, reset. It saves this fortnight to the history below and clears every tick, on both phones.${debtsOwing(plan) > 0 ? ' It also takes what you ticked towards the debts off the amounts owing.' : ''}</p>
       <div class="form-actions">
         ${ui.offline ? '' : confirmButton(ui, {
           action: 'fortnight-reset', label: 'Reset for next fortnight', confirmLabel: 'Yes, save and reset',
