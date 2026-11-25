@@ -1,5 +1,5 @@
 import { esc, money, shortDate, isoToday } from '../format.js';
-import { checklistGroups, checklistProgress, debtsOwing } from '../compute.js';
+import { checklistGroups, checklistProgress, debtsOwing, depositAccount } from '../compute.js';
 import { confirmButton } from './shared.js';
 
 function progressCard(p, owing) {
@@ -103,6 +103,7 @@ export function render(state, ui) {
   const plan = state.plan;
   const progress = checklistProgress(plan, state.ticks, state.landed);
   const groups = checklistGroups(plan, state.ticks, state.landed);
+  const deposit = depositAccount(plan);
   return `
   <h1>Checklist</h1>
   ${state.startedOn ? `<p class="hint centre">This fortnight started ${shortDate(state.startedOn)}</p>` : ''}
@@ -112,6 +113,14 @@ export function render(state, ui) {
   <div class="section reset-section">
     <div class="card">
       <p class="hint">When the fortnight is finished, reset. It saves this fortnight to the history below and clears every tick, on both phones.${debtsOwing(plan) > 0 ? ' It also takes what you ticked towards the debts off the amounts owing.' : ''}</p>
+      ${ui.offline || !deposit ? '' : `
+      <div class="landed">
+        <label class="lbl" for="reset-balance">What does ${esc(deposit.name)} show now? (optional)</label>
+        <input id="reset-balance" class="form-input${ui.resetBalanceError ? ' invalid' : ''}" type="text" inputmode="decimal" autocomplete="off"
+          data-input="reset-balance" value="${esc(ui.resetBalance || '')}" placeholder="The balance in the bank" />
+        ${ui.resetBalanceError ? `<span class="field-error">${esc(ui.resetBalanceError)}</span>` : ''}
+        <span class="hint">Entering it keeps the Savings page matched to the bank. It is logged with today's date when you reset.</span>
+      </div>`}
       <div class="form-actions">
         ${ui.offline ? '' : confirmButton(ui, {
           action: 'fortnight-reset', label: 'Reset for next fortnight', confirmLabel: 'Yes, save and reset',
@@ -165,9 +174,25 @@ export const actions = {
   tick,
   'landed-save': saveLanded,
   'change:landed': saveLanded,
-  'fortnight-reset': ({ ui, store, act, toast }) => act(async () => {
-    const saved = await store.closeFortnight(isoToday());
-    ui.armed = null;
-    toast(saved ? 'Fortnight saved. Ticks cleared.' : 'Already reset');
-  }),
+  'input:reset-balance': ({ el, ui }) => { ui.resetBalance = el.value; },
+  'fortnight-reset': ({ state, ui, store, act, paint, toast, parseMoney }) => {
+    const text = (ui.resetBalance || '').trim();
+    const balance = text === '' ? null : parseMoney(text);
+    if (text !== '' && balance === null) {
+      Object.assign(ui, { resetBalanceError: 'Enter the balance, like 1234.56, or leave it empty.', armed: null });
+      return paint();
+    }
+    ui.resetBalanceError = '';
+    const deposit = depositAccount(state.plan);
+    return act(async () => {
+      const today = isoToday();
+      const saved = await store.closeFortnight(today);
+      ui.armed = null;
+      if (saved && balance !== null && deposit) {
+        await store.addBalance({ accountId: deposit.id, onDate: today, balance });
+      }
+      if (saved) ui.resetBalance = '';
+      toast(saved ? (balance !== null ? 'Fortnight saved. Ticks cleared and balance logged.' : 'Fortnight saved. Ticks cleared.') : 'Already reset');
+    });
+  },
 };

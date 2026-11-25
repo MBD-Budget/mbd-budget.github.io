@@ -70,6 +70,7 @@ export async function load() {
       history: history.map((h) => ({
         id: h.id, closedOn: h.closed_on, transfersDone: h.transfers_done,
         transfersTotal: h.transfers_total, depositTransferred: num(h.deposit_transferred), debtPaid: num(h.debt_paid) || 0,
+        startedOn: h.started_on || null,
       })),
       balances: balances.map((b) => ({ id: b.id, accountId: b.account_id, onDate: b.on_date, balance: num(b.balance) })),
       offline: false,
@@ -131,8 +132,8 @@ export async function exportAll() {
     version: 1,
     plan: state.plan,
     balances: state.balances.map(({ accountId, onDate, balance }) => ({ accountId, onDate, balance })),
-    history: [...state.history].reverse().map(({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid }) =>
-      ({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid: debtPaid || 0 })),
+    history: [...state.history].reverse().map(({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid, startedOn }) =>
+      ({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid: debtPaid || 0, startedOn: startedOn || null })),
   };
 }
 
@@ -152,6 +153,7 @@ export async function importAll(obj) {
     await check(db.from('history').insert(obj.history.map((h) => ({
       closed_on: h.closedOn, transfers_done: h.transfersDone,
       transfers_total: h.transfersTotal, deposit_transferred: h.depositTransferred, debt_paid: h.debtPaid || 0,
+      started_on: h.startedOn || null,
     }))));
   }
 }

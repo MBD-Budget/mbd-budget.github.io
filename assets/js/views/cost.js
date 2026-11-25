@@ -1,18 +1,23 @@
 import { esc, money, money0 } from '../format.js';
-import { categoryRows, costSummary, barData, fuelSummary } from '../compute.js';
+import { categoryRows, costSummary, barData, fuelSummary, planCheck } from '../compute.js';
 import { hBars } from '../charts.js';
-import { editBar, field, addRowButton, removeRowButton } from './shared.js';
+import { editBar, field, choice, addRowButton, removeRowButton } from './shared.js';
 
 const trimNumber = (n) => String(Math.round(n * 100) / 100);
 
 function summaryCards(plan) {
   const s = costSummary(plan);
+  const check = planCheck(plan).savings;
+  const gap = check.ok ? '' : (check.gap > 0
+    ? ` That is ${money0(check.gap)} less than what is left over, so some money on the checklist has no budget category. Settings → Plan check shows where.`
+    : ` That is ${money0(-check.gap)} more than what is left over. Settings → Plan check shows where.`);
   return `
   <div class="stat-cards three">
     <div class="stat-card"><span class="stat-label">Income a month</span><span class="stat-value">${money0(s.income)}</span></div>
     <div class="stat-card"><span class="stat-label">Budget a month</span><span class="stat-value">${money0(s.budgetTotal)}</span></div>
     <div class="stat-card ${s.leftOver < 0 ? 'expense-card' : 'income-card'}"><span class="stat-label">Left over</span><span class="stat-value">${money0(s.leftOver)}</span></div>
-  </div>`;
+  </div>
+  <p class="hint cards-note${check.ok ? '' : ' hint-warn'}">Going to savings on the checklist: <strong>${money0(check.toSavings)}</strong> a month.${gap}</p>`;
 }
 
 function chart(plan, ui) {
@@ -78,6 +83,7 @@ function fuelRead(plan) {
 function editView(plan, ui) {
   const f = fuelSummary(plan.fuel);
   const fuelAttrs = 'data-input="fuel"';
+  const accountOptions = plan.accounts.map((a) => ({ id: a.id, name: a.name }));
   const categories = plan.categories.map((cat, i) => `
     <div class="card edit-card">
       <div class="edit-line">
@@ -91,6 +97,10 @@ function editView(plan, ui) {
           : `<label class="lbl">Budget a month ${field(ui, `categories.${i}.budget`, cat.budget, 'moneyOrNull', { placeholder: '–' })}</label>`}
       </div>
       <label class="lbl">Basis ${field(ui, `categories.${i}.basis`, cat.basis, 'textOptional')}</label>
+      <div class="edit-line">
+        <label class="lbl">Paid from ${choice(ui, `categories.${i}.accountId`, cat.accountId, accountOptions, { allowEmpty: true })}</label>
+        <label class="lbl">Shared with (optional) ${choice(ui, `categories.${i}.accountId2`, cat.accountId2, accountOptions, { allowEmpty: true })}</label>
+      </div>
     </div>`).join('');
 
   const trips = plan.fuel.trips.map((t, i) => `
@@ -123,6 +133,7 @@ function editView(plan, ui) {
   </div>
   <div class="section">
     <h2>Categories</h2>
+    <p class="hint page-hint">"Paid from" is the account each cost comes out of. Settings → Plan check uses it to compare each account's transfers with its budget.</p>
     ${categories}
     <div class="form-actions">${addRowButton('categories', 'Add a category')}</div>
   </div>`;

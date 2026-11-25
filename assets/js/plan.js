@@ -10,7 +10,10 @@ export function parseMoney(value) {
     return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : null;
   }
   if (typeof value !== 'string') return null;
-  const cleaned = value.replace(/[$,\s]/g, '');
+  const text = value.replace(/[$\s]/g, '');
+  // Commas only as thousands separators: "1,600.50" is fine, "1,60" is a slip, not 160.
+  if (text.includes(',') && !/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) return null;
+  const cleaned = text.replace(/,/g, '');
   if (!/^\d+(\.\d+)?$|^\.\d+$/.test(cleaned)) return null;
   return Math.round(Number(cleaned) * 100) / 100;
 }
@@ -75,6 +78,9 @@ export function validatePlan(plan) {
   for (const c of categories) {
     if (!isNumOrNull(c.measured)) errors.push(`Category "${c.name || c.id}" has a measured amount that isn't a number.`);
     if (!isNumOrNull(c.budget)) errors.push(`Category "${c.name || c.id}" has a budget that isn't a number.`);
+    for (const id of [c.accountId, c.accountId2]) {
+      if (id !== null && id !== undefined && !accountIds.has(id)) errors.push(`Category "${c.name || c.id}" is paid from an unknown account.`);
+    }
   }
 
   const fuel = plan.fuel;
@@ -136,7 +142,8 @@ export function validateExport(obj) {
     }
   });
   (obj.history || []).forEach((h, i) => {
-    if (!h || !isDate(h.closedOn) || ![h.transfersDone, h.transfersTotal, h.depositTransferred].every(isNum) || !isNumOrNull(h.debtPaid)) {
+    if (!h || !isDate(h.closedOn) || ![h.transfersDone, h.transfersTotal, h.depositTransferred].every(isNum) || !isNumOrNull(h.debtPaid)
+      || !(h.startedOn === null || h.startedOn === undefined || isDate(h.startedOn))) {
       errors.push(`History entry ${i + 1} needs a date and three numbers.`);
     }
   });
@@ -241,7 +248,9 @@ export function removalBlocker(plan, list, index) {
   const many = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   if (list === 'accounts') {
     const used = plan.transfers.filter((t) => t.fromAccountId === row.id || t.toAccountId === row.id).length;
-    return used ? `"${row.name}" is still used by ${many(used, 'transfer')}. Change or remove those first.` : '';
+    if (used) return `"${row.name}" is still used by ${many(used, 'transfer')}. Change or remove those first.`;
+    const paying = (plan.categories || []).filter((c) => c.accountId === row.id || c.accountId2 === row.id).length;
+    return paying ? `"${row.name}" still pays for ${paying === 1 ? '1 budget category' : `${paying} budget categories`}. Change those under Cost of living first.` : '';
   }
   if (list === 'incomeSources') {
     const used = plan.transfers.filter((t) => t.incomeSourceId === row.id).length;
@@ -262,7 +271,7 @@ export function blankRow(list, plan) {
     case 'loans':
       return { id: newId('l'), personId: firstId(plan.people), name: 'New loan', balance: 0, asAt: null };
     case 'categories':
-      return { id: newId('c'), name: 'New category', measured: null, budget: 0, basis: '', link: null };
+      return { id: newId('c'), name: 'New category', measured: null, budget: 0, basis: '', link: null, accountId: null, accountId2: null };
     case 'fuel.trips':
       return { id: newId('f'), name: 'New trip', car: '', returnKm: 0, tripsPerWeek: 0, litresPer100: 0 };
     case 'goals':

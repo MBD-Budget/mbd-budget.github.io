@@ -42,6 +42,10 @@ create table if not exists public.history (
 -- What went to debts instead of the house deposit that fortnight.
 alter table public.history add column if not exists debt_paid numeric(12,2) not null default 0 check (debt_paid >= 0);
 
+-- The day that fortnight began. A balance logged on a later day may already hold part of that
+-- fortnight's deposits, so the app does not add them on top of it.
+alter table public.history add column if not exists started_on date;
+
 create table if not exists public.balances (
   id         bigint generated always as identity primary key,
   account_id text not null,
@@ -116,6 +120,7 @@ as $$
 declare
   v_plan    jsonb;
   v_landed  numeric;
+  v_started date;
   v_done    integer;
   v_total   integer;
   v_deposit numeric;
@@ -133,7 +138,7 @@ begin
   end if;
 
   -- One reset at a time: a second caller waits here, then finds no ticks.
-  select landed_amount into v_landed from public.fortnight where id = 1 for update;
+  select landed_amount, started_on into v_landed, v_started from public.fortnight where id = 1 for update;
   select data into v_plan from public.plan where id = 1;
   if v_plan is null then
     raise exception 'nothing to close';
@@ -191,8 +196,8 @@ begin
     update public.plan set data = jsonb_set(data, '{debts}', v_debts), updated_at = now() where id = 1;
   end if;
 
-  insert into public.history (closed_on, transfers_done, transfers_total, deposit_transferred, debt_paid)
-  values (v_today, v_done, v_total, round(v_left, 2), round(v_paid, 2))
+  insert into public.history (closed_on, transfers_done, transfers_total, deposit_transferred, debt_paid, started_on)
+  values (v_today, v_done, v_total, round(v_left, 2), round(v_paid, 2), least(v_started, v_today))
   returning * into v_row;
 
   delete from public.ticks where true;

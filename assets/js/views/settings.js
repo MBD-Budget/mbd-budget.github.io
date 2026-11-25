@@ -1,4 +1,5 @@
-import { esc } from '../format.js';
+import { esc, money, money0 } from '../format.js';
+import { planCheck, ACCOUNT_TOLERANCE } from '../compute.js';
 import { passwordProblem } from '../plan.js';
 import { changePassword } from '../auth.js';
 import { confirmButton, editBar, field, choice, addRowButton, removeRowButton } from './shared.js';
@@ -22,6 +23,50 @@ function planRead(plan) {
     <div class="row"><div class="row-main"><span class="row-title">People</span><span class="row-sub">${esc(plan.people.map((p) => p.name).join(' and '))}</span></div></div>
     <div class="row"><div class="row-main"><span class="row-title">Accounts</span><span class="row-sub">${plan.accounts.length} accounts</span></div></div>
     <div class="row"><div class="row-main"><span class="row-title">Payday transfers</span><span class="row-sub">${count} transfers each fortnight</span></div></div>
+  </div>`;
+}
+
+const mark = (ok) => (ok ? '<span class="tag tag-done">Adds up</span>' : '<span class="tag tag-warn">Check</span>');
+const checkRow = (title, sub, ok) => `
+    <div class="row">
+      <div class="row-main"><span class="row-title">${title}</span><span class="row-sub">${sub}</span></div>
+      <div class="row-nums">${mark(ok)}</div>
+    </div>`;
+
+function planCheckPanel(plan) {
+  const c = planCheck(plan);
+  const pays = c.pays.map((p) => checkRow(esc(p.name),
+    p.ok ? `${money(p.takeHome)} lands and all of it is given a job${p.hasRemainder ? ' (the rest goes to one transfer)' : ''}`
+      : p.unassigned > 0 ? `${money(p.takeHome)} lands, ${money(p.allocated)} is given a job. ${money(p.unassigned)} is not assigned`
+        : `${money(p.takeHome)} lands but the transfers add up to ${money(p.allocated)}, which is ${money(-p.unassigned)} too much`,
+    p.ok)).join('');
+  const hubs = c.hubs.map((h) => checkRow(`${esc(h.accountName)} · ${esc(h.sourceName)}`,
+    h.ok ? `${money(h.in)} in and ${money(h.out)} passed on`
+      : `${money(h.in)} in but ${money(h.out)} passed on, a difference of ${money(Math.abs(h.diff))}`, h.ok)).join('');
+  const pools = c.pools.map((p) => checkRow(esc(p.names.join(' and ')),
+    p.categories === 0
+      ? `${money0(p.transferMonthly)} a month goes here but no budget category is paid from it`
+      : `${money0(p.transferMonthly)} a month in, ${money0(p.budgetMonthly)} budgeted${p.ok ? '' : `: ${money0(Math.abs(p.diff))} ${p.diff > 0 ? 'more than the budget' : 'short of the budget'}`}`,
+    p.ok)).join('');
+  const unlinked = c.unlinked.length ? checkRow('Categories with no account',
+    `${esc(c.unlinked.map((u) => u.name).join(', '))}: ${money0(c.unlinked.reduce((t, u) => t + u.budget, 0))} a month. Set "Paid from" under Cost of living → Edit figures`, false) : '';
+  const s = c.savings;
+  const savings = checkRow('Left over against savings',
+    `${money0(s.leftOver)} a month left over on the budget; ${money0(s.toSavings)} a month goes to savings on the checklist${s.ok ? '' : `, a gap of ${money0(Math.abs(s.gap))}`}`, s.ok);
+  return `
+  <div class="section">
+    <h2>Plan check</h2>
+    <div class="banner ${c.issues ? 'warn' : 'ok'} plain block" role="status"><span>${c.issues
+      ? `<strong>${c.issues} ${c.issues === 1 ? 'thing does' : 'things do'} not add up.</strong> Look for "Check" below.`
+      : '<strong>The plan adds up.</strong> Every pay, account and budget agrees.'}</span></div>
+    <h3 class="form-title">Each pay</h3>
+    <div class="card rows">${pays}</div>
+    ${hubs ? `<h3 class="form-title">Money passed through an account</h3><div class="card rows">${hubs}</div>` : ''}
+    <h3 class="form-title">Each account against its budget</h3>
+    <p class="hint page-hint">Transfers are turned into a month (× 26 ÷ 12). Within ${money0(ACCOUNT_TOLERANCE)} a month counts as adding up, because budgets are in whole dollars.</p>
+    <div class="card rows">${pools || '<div class="row"><span class="hint">Nothing to compare yet.</span></div>'}${unlinked}</div>
+    <h3 class="form-title">Savings</h3>
+    <div class="card rows">${savings}</div>
   </div>`;
 }
 
@@ -92,6 +137,7 @@ export function render(state, ui) {
   </div>` : ''}
 
   ${ui.editing ? '' : `
+  ${state.plan ? planCheckPanel(state.plan) : ''}
   <div class="section">
     <h2>Backup</h2>
     <div class="card">

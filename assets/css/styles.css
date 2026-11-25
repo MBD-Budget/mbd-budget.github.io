@@ -1214,3 +1214,7 @@ h3.form-title.spaced { margin-top: 1.4rem; }
 .tick-to .tag { margin-left: .25rem; }
 .banner.block { display: block; }
 .progress-right .num-sub { white-space: normal; }
+
+/* Note under the summary cards on Cost of living */
+.cards-note { text-align: center; margin: -0.4rem 0 1.4rem; }
+.hint-warn { color: var(--text); }

@@ -9,7 +9,7 @@ export function hBars(rows) {
     <li class="hbar">
       <div class="hbar-head">
         <span class="hbar-name">${esc(r.name)}</span>
-        <span class="hbar-nums"><span class="num">${money0(r.amount)}</span> <span class="hbar-share">${pct(r.share)}</span></span>
+        <span class="hbar-nums"><span class="num">${money0(r.amount)}</span> <span class="hbar-share">${r.percent === undefined ? pct(r.share) : `${r.percent}%`}</span></span>
       </div>
       <div class="hbar-track"><div class="hbar-fill" style="width:${Math.max(1.5, (r.amount / max) * 100).toFixed(1)}%"></div></div>
     </li>`).join('')}</ol>`;

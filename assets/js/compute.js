@@ -74,7 +74,16 @@ export function barData(plan, mode) {
     .filter((r) => r.amount > 0)
     .sort((a, b) => b.amount - a.amount);
   const total = sum(rows, (r) => r.amount);
-  return rows.map((r) => ({ ...r, share: r.amount / total }));
+  // Whole per cents that always add up to 100: round down, then hand the spare points
+  // to the rows that lost the most in the rounding.
+  const exact = rows.map((r) => (r.amount / total) * 100);
+  const percents = exact.map(Math.floor);
+  const spare = Math.round(100 - sum(percents, (n) => n));
+  exact.map((value, i) => ({ i, lost: value - percents[i] }))
+    .sort((a, b) => b.lost - a.lost || a.i - b.i)
+    .slice(0, spare)
+    .forEach(({ i }) => { percents[i] += 1; });
+  return rows.map((r, i) => ({ ...r, share: r.amount / total, percent: percents[i] }));
 }
 
 // ---- Debts to clear before saving ---------------------------------------------
@@ -154,7 +163,7 @@ export function checklistGroups(plan, ticks, landed) {
     if (left > 0) parts.push({ name: name(transfer.toAccountId), amount: left, isDebt: false });
     return parts.some((part) => part.isDebt) ? parts : null;
   };
-  return plan.incomeSources
+  const groups = plan.incomeSources
     .map((source, index) => ({ source, index }))
     .sort((a, b) => (a.source.weekOfFortnight - b.source.weekOfFortnight)
       || (dayIndex(a.source.payday) - dayIndex(b.source.payday)) || (a.index - b.index))
@@ -168,7 +177,7 @@ export function checklistGroups(plan, ticks, landed) {
           toName: name(transfer.toAccountId),
           ticked: ticked.has(transfer.id),
           tickable: !isEstimate,
-          routing: route(transfer, amount),
+          routing: null,
         };
       });
       return {
@@ -180,6 +189,12 @@ export function checklistGroups(plan, ticks, landed) {
         done: rows.filter((r) => r.ticked).length,
       };
     });
+  // What is already ticked is what a reset will pay first, so those rows take the debts
+  // first; the rows still to do take whatever is owing after that. Checklist order within each.
+  const all = groups.flatMap((g) => g.rows);
+  for (const row of all.filter((r) => r.ticked)) row.routing = route(row.transfer, row.amount);
+  for (const row of all.filter((r) => !r.ticked)) row.routing = route(row.transfer, row.amount);
+  return groups;
 }
 
 export function checklistProgress(plan, ticks, landed) {
@@ -226,8 +241,12 @@ export function savingsSeries(plan, balances, history, today) {
   const actual = account ? accountSeries(balances, account.id) : [];
   const latest = actual.length ? actual[actual.length - 1] : null;
   let running = latest ? latest.amount : 0;
+  // A logged balance is the truth. A past fortnight is added on top only if it began on or
+  // after the day of that balance; one that was already under way may be partly in the balance,
+  // and counting it again would overstate the savings. (Rows saved before fortnights recorded
+  // their start are judged by the day they were closed.)
   const later = history
-    .filter((h) => !latest || h.closedOn > latest.date)
+    .filter((h) => !latest || (h.startedOn ? h.startedOn >= latest.date : h.closedOn > latest.date))
     .sort((a, b) => a.closedOn.localeCompare(b.closedOn));
   for (const h of later) {
     running = Math.round((running + h.depositTransferred) * 100) / 100;
@@ -238,19 +257,38 @@ export function savingsSeries(plan, balances, history, today) {
   const perFortnight = (plan.savings && plan.savings.perFortnight) || 0;
   const owing = debtsOwing(plan);
   const end = (plan.goals || []).reduce((max, g) => (g.targetDate > max ? g.targetDate : max), today);
+  // Saving starts with the plan: the fortnights are counted from the plan's first day if that
+  // is still ahead. Each fortnight is 14 days counting its first day, so one that starts on the
+  // 1st is banked by the 14th. A part fortnight at the end counts as a whole one, as in goalProgress.
+  const from = countFrom(plan, today);
   const projection = [{ date: today, amount: saved }];
+  if (from > today && from <= end) projection.push({ date: from, amount: saved });
   for (let i = 1; i <= 260; i += 1) {
-    const date = addDays(today, i * 14);
-    if (date > end) break;
-    projection.push({ date, amount: saved + Math.max(0, perFortnight * i - owing) });
+    const amount = saved + Math.max(0, perFortnight * i - owing);
+    const date = addDays(from, i * 14 - 1);
+    if (date > end) {
+      if (i === 1 || addDays(from, (i - 1) * 14 - 1) < end) projection.push({ date: end, amount });
+      break;
+    }
+    projection.push({ date, amount });
   }
-  return { actual, projection, saved };
+  return { actual, projection, saved, hasData: actual.length > 0, from };
+}
+
+// The day the fortnights are counted from: today, or the plan's first day if that is later.
+export function countFrom(plan, today) {
+  const start = plan && plan.period && plan.period.start;
+  return start && start > today ? start : today;
 }
 
 // `owing` is debt that has to be cleared from the same money before any of it is saved.
-export function goalProgress(goal, saved, today, perFortnight = 0, owing = 0) {
+// Fortnights left are pay cycles still to come: counted from `from` (see countFrom) when that
+// is later than today, with a part fortnight counted as a whole one. Both end days count, so
+// 1 December to 31 May is exactly 13 fortnights.
+export function goalProgress(goal, saved, today, perFortnight = 0, owing = 0, from = null) {
   const remaining = Math.max(0, goal.target - saved);
-  const fortnightsLeft = Math.max(0, Math.floor(daysBetween(today, goal.targetDate) / 14));
+  const start = from && from > today ? from : today;
+  const fortnightsLeft = Math.max(0, Math.ceil((daysBetween(start, goal.targetDate) + 1) / 14));
   let neededPerFortnight;
   if (remaining === 0) neededPerFortnight = 0;
   else if (fortnightsLeft === 0) neededPerFortnight = null;
@@ -265,22 +303,86 @@ export function goalProgress(goal, saved, today, perFortnight = 0, owing = 0) {
   };
 }
 
-// ING pays bonus interest only if the deposit account ends the month higher than it ended
-// the month before. Compares the latest known balance with last month's last known balance.
-export function ingCheck(plan, balances, history, today) {
-  const { actual, saved } = savingsSeries(plan, balances, history, today);
-  const thisMonth = today.slice(0, 7);
-  const firstOfMonth = `${thisMonth}-01`;
-  const lastMonth = addDays(firstOfMonth, -1).slice(0, 7);
-  const nextMonthFirst = addDays(firstOfMonth, 32).slice(0, 7) + '-01';
-  const deadline = addDays(nextMonthFirst, -1);
-  const previous = actual.filter((p) => p.date.slice(0, 7) === lastMonth).pop();
-  if (!previous) return { previousMonthEnd: null, current: saved, ok: null, shortfall: 0, deadline };
-  return {
-    previousMonthEnd: previous.amount,
-    current: saved,
-    ok: saved > previous.amount,
-    shortfall: Math.max(0, Math.round((previous.amount - saved) * 100) / 100),
-    deadline,
-  };
+// ---- Plan check ----------------------------------------------------------------
+// Does the plan add up? Each pay against its transfers, each pass-through account in against
+// out, each account's money against the budget categories paid from it, and what is left
+// over against what the transfers really send to savings.
+export const ACCOUNT_TOLERANCE = 10;   // dollars a month; rounding to whole dollars adds up
+export const SAVINGS_TOLERANCE = 20;
+
+export function planCheck(plan) {
+  const accounts = byId(plan.accounts);
+  const worth = (t) => (t.rule === 'remainder' ? transferAmount(plan, t, null).amount : t.amount || 0);
+  const moving = plan.transfers.filter((t) => t.rule !== 'stays');
+
+  const pays = plan.incomeSources.map((source) => {
+    const mine = plan.transfers.filter((t) => t.incomeSourceId === source.id);
+    const fedByThisPay = new Set(mine.filter((t) => t.rule !== 'stays').map((t) => t.toAccountId));
+    const first = mine.filter((t) => !fedByThisPay.has(t.fromAccountId));   // out of where the pay lands
+    const hasRemainder = first.some((t) => t.rule === 'remainder');
+    const set = sum(first.filter((t) => t.rule !== 'remainder'), (t) => t.amount);
+    const allocated = hasRemainder ? Math.max(set, source.takeHome) : set;
+    const unassigned = cents(source.takeHome - allocated);
+    return { id: source.id, name: source.name, takeHome: source.takeHome, allocated: cents(allocated), unassigned, hasRemainder, ok: unassigned === 0 };
+  });
+
+  const hubs = [];
+  for (const source of plan.incomeSources) {
+    const mine = moving.filter((t) => t.incomeSourceId === source.id);
+    for (const account of plan.accounts) {
+      const into = mine.filter((t) => t.toAccountId === account.id);
+      const out = mine.filter((t) => t.fromAccountId === account.id);
+      if (!into.length || !out.length) continue;
+      const moneyIn = cents(sum(into, worth));
+      const moneyOut = cents(sum(out, worth));
+      hubs.push({ sourceName: source.name, accountName: account.name, in: moneyIn, out: moneyOut, diff: cents(moneyIn - moneyOut), ok: moneyIn === moneyOut });
+    }
+  }
+
+  // Money that ends up in each account every fortnight, to be spent from there.
+  const receives = new Set(moving.map((t) => t.toAccountId));
+  const kept = (id) => sum(plan.transfers.filter((t) => t.rule === 'stays' && t.fromAccountId === id), (t) => t.amount)
+    + (receives.has(id) ? sum(moving.filter((t) => t.toAccountId === id), worth) - sum(moving.filter((t) => t.fromAccountId === id), worth) : 0);
+
+  // Categories can be paid from one account or shared by two; accounts that share a category
+  // are checked together.
+  const group = new Map(plan.accounts.map((a) => [a.id, a.id]));
+  const find = (id) => { let at = id; while (group.get(at) !== at) at = group.get(at); return at; };
+  const rows = categoryRows(plan);
+  const linksOf = (cat) => [cat.accountId, cat.accountId2].filter((id) => id && accounts.has(id));
+  const linked = [];
+  const unlinked = [];
+  plan.categories.forEach((cat, i) => {
+    const links = linksOf(cat);
+    const budget = rows[i].budget || 0;
+    if (!links.length) { if (budget > 0) unlinked.push({ id: cat.id, name: cat.name, budget }); return; }
+    if (links.length === 2) group.set(find(links[1]), find(links[0]));
+    linked.push({ account: links[0], budget });
+  });
+  const pools = [];
+  for (const account of plan.accounts) {
+    if (account.role !== 'none' || find(account.id) !== account.id) continue;
+    const members = plan.accounts.filter((a) => a.role === 'none' && find(a.id) === account.id);
+    const mine = linked.filter((l) => find(l.account) === account.id);
+    const transferMonthly = toMonthly(sum(members, (a) => kept(a.id)));
+    const budgetMonthly = sum(mine, (l) => l.budget);
+    if (Math.abs(transferMonthly) < 0.005 && budgetMonthly < 0.005) continue;
+    const diff = transferMonthly - budgetMonthly;
+    pools.push({
+      names: members.filter((a) => members.length === 1 || Math.abs(kept(a.id)) >= 0.005 || linked.some((l) => l.account === a.id)).map((a) => a.name),
+      transferMonthly, budgetMonthly, diff,
+      categories: mine.length,
+      ok: mine.length > 0 && Math.abs(diff) <= ACCOUNT_TOLERANCE,
+    });
+  }
+
+  const cost = costSummary(plan);
+  const savingIds = new Set(plan.accounts.filter((a) => a.role !== 'none').map((a) => a.id));
+  const toSavings = toMonthly(sum(moving.filter((t) => savingIds.has(t.toAccountId)), worth));
+  const gap = cost.leftOver - toSavings;
+  const savings = { leftOver: cost.leftOver, toSavings, gap, ok: Math.abs(gap) <= SAVINGS_TOLERANCE };
+
+  const issues = pays.filter((p) => !p.ok).length + hubs.filter((h) => !h.ok).length
+    + pools.filter((p) => !p.ok).length + (unlinked.length ? 1 : 0) + (savings.ok ? 0 : 1);
+  return { pays, hubs, pools, unlinked, savings, issues };
 }

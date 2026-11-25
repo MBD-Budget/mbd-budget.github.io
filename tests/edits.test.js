@@ -132,3 +132,12 @@ test('removalBlocker stops an account or pay that transfers still use from being
 test('removalBlocker stops a person who still has a pay or a loan from being removed', () => {
   assert.match(removalBlocker(example, 'people', 0), /still has/);
 });
+
+test('removalBlocker stops an account that a budget category is paid from being removed', () => {
+  const p = structuredClone(example);
+  p.transfers = p.transfers.filter((t) => t.fromAccountId !== 'sub2' && t.toAccountId !== 'sub2');
+  const index = p.accounts.findIndex((a) => a.id === 'sub2');
+  assert.equal(removalBlocker(p, 'accounts', index), '');
+  p.categories[1].accountId = 'sub2';
+  assert.match(removalBlocker(p, 'accounts', index), /1 budget category/);
+});

@@ -33,7 +33,7 @@ export function cached() { return null; }
 export async function closeFortnight() {
   const p = checklistProgress(state.plan, state.ticks, state.landed);
   if (p.done === 0) return false;
-  state.history.unshift({ id: nextId++, closedOn: isoToday(), transfersDone: p.done, transfersTotal: p.total, depositTransferred: p.depositTransferred, debtPaid: p.debtPaid });
+  state.history.unshift({ id: nextId++, closedOn: isoToday(), transfersDone: p.done, transfersTotal: p.total, depositTransferred: p.depositTransferred, debtPaid: p.debtPaid, startedOn: state.startedOn });
   if (p.debtPaid > 0) state.plan.debts = payDebts(state.plan.debts, p.debtPaid).debts;
   state.ticks = [];
   state.landed = null;
@@ -51,8 +51,8 @@ export async function exportAll() {
     version: 1,
     plan: structuredClone(state.plan),
     balances: state.balances.map(({ accountId, onDate, balance }) => ({ accountId, onDate, balance })),
-    history: [...state.history].reverse().map(({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid }) =>
-      ({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid: debtPaid || 0 })),
+    history: [...state.history].reverse().map(({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid, startedOn }) =>
+      ({ closedOn, transfersDone, transfersTotal, depositTransferred, debtPaid: debtPaid || 0, startedOn: startedOn || null })),
   };
 }
 export async function importAll(obj) {

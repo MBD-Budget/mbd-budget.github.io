@@ -108,3 +108,31 @@ test('history may record what went to debts', () => {
   p.history.push({ closedOn: '2026-11-20', transfersDone: 3, transfersTotal: 11, depositTransferred: 0, debtPaid: 'x' });
   assert.equal(validateExport(p).length, 1);
 });
+
+test('parseMoney takes commas only as thousands separators', () => {
+  assert.equal(parseMoney('1,600.50'), 1600.5);
+  assert.equal(parseMoney('$12,345,678'), 12345678);
+  assert.equal(parseMoney('1,60'), null);      // a slip for 1.60, not 160
+  assert.equal(parseMoney('16,00'), null);
+  assert.equal(parseMoney('1,6000'), null);
+  assert.equal(parseMoney(',500'), null);
+});
+
+test('a category may say which account pays for it, and it must be a real account', () => {
+  const ok = clone();
+  ok.plan.categories[0].accountId = 'joint';
+  ok.plan.categories[0].accountId2 = null;
+  assert.deepEqual(validateExport(ok), []);
+  ok.plan.categories[0].accountId2 = 'nowhere';
+  assert.equal(validateExport(ok).length, 1);
+});
+
+test('history may record the day the fortnight began', () => {
+  const row = { closedOn: '2026-12-14', transfersDone: 1, transfersTotal: 11, depositTransferred: 100 };
+  const withStart = clone(); withStart.history = [{ ...row, startedOn: '2026-12-01' }];
+  assert.deepEqual(validateExport(withStart), []);
+  const none = clone(); none.history = [{ ...row, startedOn: null }];
+  assert.deepEqual(validateExport(none), []);
+  const bad = clone(); bad.history = [{ ...row, startedOn: 'last week' }];
+  assert.equal(validateExport(bad).length, 1);
+});
