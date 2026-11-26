@@ -15,11 +15,15 @@ function clearCache() {
   try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
 }
 
-const emptyState = () => ({ plan: null, ticks: [], landed: null, startedOn: null, history: [], balances: [], offline: false });
+const emptyState = () => ({ plan: null, planVersion: null, ticks: [], landed: null, startedOn: null, history: [], balances: [], offline: false });
 
 export class SignedOutError extends Error {}
 export class OfflineError extends Error {
   constructor() { super('Can\'t reach the database, so that change wasn\'t saved.'); }
+}
+// The plan changed on the other phone after this one started editing it.
+export class ConflictError extends Error {
+  constructor() { super('Not saved: the plan was changed on the other phone while you were editing.'); }
 }
 
 // Turn a failed call into the right kind of error for the app to act on.
@@ -56,7 +60,7 @@ export function cached() {
 export async function load() {
   try {
     const [planRow, ticks, fortnight, history, balances] = await Promise.all([
-      check(db.from('plan').select('data').eq('id', 1).maybeSingle()),
+      check(db.from('plan').select('data, version').eq('id', 1).maybeSingle()),
       check(db.from('ticks').select('transfer_id')),
       check(db.from('fortnight').select('landed_amount, started_on').eq('id', 1).maybeSingle()),
       check(db.from('history').select('*').order('closed_on', { ascending: false }).order('id', { ascending: false })),
@@ -64,6 +68,7 @@ export async function load() {
     ]);
     const state = {
       plan: planRow ? planRow.data : null,
+      planVersion: planRow ? Number(planRow.version) : null,
       ticks: ticks.map((t) => t.transfer_id),
       landed: fortnight ? num(fortnight.landed_amount) : null,
       startedOn: fortnight ? fortnight.started_on : null,
@@ -85,9 +90,17 @@ export async function load() {
   }
 }
 
-export async function savePlan(plan) {
+// With `version`, saves only if the plan is still at that version (the database raises it on
+// every change), so an edit can't overwrite what the other phone changed in the meantime.
+export async function savePlan(plan, { version = null } = {}) {
   const user = await currentUser();
-  await check(db.from('plan').upsert({ id: 1, data: plan, updated_at: new Date().toISOString(), updated_by: user ? user.id : null }));
+  const row = { data: plan, updated_at: new Date().toISOString(), updated_by: user ? user.id : null };
+  if (version === null || version === undefined) {
+    await check(db.from('plan').upsert({ id: 1, ...row }));
+    return;
+  }
+  const saved = await check(db.from('plan').update(row).eq('id', 1).eq('version', version).select('version'));
+  if (!saved || !saved.length) throw new ConflictError();
 }
 
 // Safe to repeat: ticking a ticked row or unticking an unticked row changes nothing.
@@ -138,24 +151,11 @@ export async function exportAll() {
 }
 
 // Replaces the plan, every balance entry and the whole history. Ticks are cleared.
+// One database call, so it either all happens or none of it does.
 export async function importAll(obj) {
   const errors = validateExport(obj);
   if (errors.length) throw new Error(errors.join(' '));
-  await savePlan(obj.plan);
-  await check(db.from('balances').delete().gte('id', 0));
-  await check(db.from('history').delete().gte('id', 0));
-  await check(db.from('ticks').delete().neq('transfer_id', ''));
-  await check(db.from('fortnight').update({ landed_amount: null }).eq('id', 1));
-  if ((obj.balances || []).length) {
-    await check(db.from('balances').insert(obj.balances.map((b) => ({ account_id: b.accountId, on_date: b.onDate, balance: b.balance }))));
-  }
-  if ((obj.history || []).length) {
-    await check(db.from('history').insert(obj.history.map((h) => ({
-      closed_on: h.closedOn, transfers_done: h.transfersDone,
-      transfers_total: h.transfersTotal, deposit_transferred: h.depositTransferred, debt_paid: h.debtPaid || 0,
-      started_on: h.startedOn || null,
-    }))));
-  }
+  await check(db.rpc('import_all', { p_data: obj }));
 }
 
 export async function signOut() {

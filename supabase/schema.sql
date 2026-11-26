@@ -211,6 +211,84 @@ revoke all on function public.close_fortnight(date) from public, anon;
 grant execute on function public.close_fortnight(date) to authenticated;
 
 -- ---------------------------------------------------------------------------
+-- Plan version
+-- Goes up by one every time the plan's figures change, whoever changes them (an edit, a reset
+-- that pays debts, an import). The app saves an edit only if the version is still the one it
+-- started editing from, so a phone can't save over a change the other phone made meanwhile.
+-- ---------------------------------------------------------------------------
+alter table public.plan add column if not exists version bigint not null default 1;
+
+create or replace function public.bump_plan_version()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.data is distinct from old.data then
+    new.version := old.version + 1;
+  else
+    new.version := old.version;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.bump_plan_version() from public, anon, authenticated;
+
+drop trigger if exists plan_version on public.plan;
+create trigger plan_version before update on public.plan
+  for each row execute function public.bump_plan_version();
+
+-- ---------------------------------------------------------------------------
+-- Import an export file
+-- Replaces the plan, every balance entry and the whole history, and clears the ticks and the
+-- landed amount, all or nothing: if any part fails, nothing changes.
+-- The app checks the file first; this checks only what it needs to stay safe.
+-- ---------------------------------------------------------------------------
+create or replace function public.import_all(p_data jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if not public.is_member() then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+  if (p_data ->> 'version') is distinct from '1' or jsonb_typeof(p_data -> 'plan') is distinct from 'object' then
+    raise exception 'This file is not a version 1 budget export.';
+  end if;
+
+  -- Wait for a reset on the other phone to finish, and hold off the next one until this is done.
+  perform 1 from public.fortnight where id = 1 for update;
+
+  insert into public.plan (id, data, updated_at, updated_by)
+  values (1, p_data -> 'plan', now(), auth.uid())
+  on conflict (id) do update
+    set data = excluded.data, updated_at = excluded.updated_at, updated_by = excluded.updated_by;
+
+  delete from public.balances where true;
+  delete from public.history where true;
+  delete from public.ticks where true;
+  update public.fortnight set landed_amount = null where id = 1;
+
+  insert into public.balances (account_id, on_date, balance)
+  select b ->> 'accountId', (b ->> 'onDate')::date, (b ->> 'balance')::numeric
+  from jsonb_array_elements(coalesce(p_data -> 'balances', '[]'::jsonb)) as b;
+
+  -- Oldest first, as in the file, so the newest entry gets the highest id.
+  insert into public.history (closed_on, transfers_done, transfers_total, deposit_transferred, debt_paid, started_on)
+  select (h ->> 'closedOn')::date, (h ->> 'transfersDone')::integer, (h ->> 'transfersTotal')::integer,
+         (h ->> 'depositTransferred')::numeric, coalesce((h ->> 'debtPaid')::numeric, 0), (h ->> 'startedOn')::date
+  from jsonb_array_elements(coalesce(p_data -> 'history', '[]'::jsonb)) with ordinality as x(h, n)
+  order by n;
+end;
+$$;
+
+revoke all on function public.import_all(jsonb) from public, anon;
+grant execute on function public.import_all(jsonb) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Live updates between the two phones
 -- ---------------------------------------------------------------------------
 do $$

@@ -30,7 +30,7 @@ let user = null;
 let state = null;
 // Everything about the screen that isn't data: edit mode, armed confirms, messages.
 const ui = {
-  editing: false, editRoute: null, draft: null, errors: [], armed: null, busy: false, offline: false,
+  editing: false, editRoute: null, editVersion: null, draft: null, errors: [], armed: null, busy: false, offline: false,
   signinError: '', signinEmail: '', userEmail: '',
   importErrors: [], pendingImport: null,
   costMode: 'budget', notice: '', isDemo: false,
@@ -195,7 +195,7 @@ function signedOut() {
   user = null;
   state = null;
   store.stopChanges();
-  Object.assign(ui, { editing: false, draft: null, errors: [], armed: null, busy: false, notice: '', pendingImport: null, importErrors: [] });
+  Object.assign(ui, { editing: false, editVersion: null, draft: null, errors: [], armed: null, busy: false, notice: '', pendingImport: null, importErrors: [] });
   paint();
 }
 
@@ -240,12 +240,12 @@ function absorbEdits() {
 
 function startEdit() {
   if (!state || !state.plan || state.offline) return;
-  Object.assign(ui, { editing: true, editRoute: currentPage().route, draft: structuredClone(state.plan), errors: [] });
+  Object.assign(ui, { editing: true, editRoute: currentPage().route, editVersion: state.planVersion, draft: structuredClone(state.plan), errors: [] });
   paint();
 }
 
 function cancelEdit() {
-  Object.assign(ui, { editing: false, editRoute: null, draft: null, errors: [], notice: '' });
+  Object.assign(ui, { editing: false, editRoute: null, editVersion: null, draft: null, errors: [], notice: '' });
   paint();
 }
 
@@ -267,11 +267,21 @@ async function saveEdit() {
     return;
   }
   ui.draft = plan;   // if the save fails, the page redraws from this, not from the old figures
+  let conflict = false;
   await act(async () => {
-    await store.savePlan(plan);
-    Object.assign(ui, { editing: false, editRoute: null, draft: null, errors: [] });
+    try {
+      await store.savePlan(plan, { version: ui.editVersion });
+    } catch (error) {
+      if (!(error instanceof store.ConflictError)) throw error;
+      // Keep what was typed on screen; saving it would undo the other phone's change.
+      conflict = true;
+      ui.notice = `${error.message} Your changes are still on screen. Note them, press Cancel, then edit again to start from the latest figures.`;
+      return;
+    }
+    Object.assign(ui, { editing: false, editRoute: null, editVersion: null, draft: null, errors: [] });
     toast('Saved');
   });
+  if (conflict) window.scrollTo(0, 0);
 }
 
 function listAt(plan, path) {

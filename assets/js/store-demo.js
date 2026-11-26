@@ -6,6 +6,9 @@ import { isoToday } from './format.js';
 
 export class SignedOutError extends Error {}
 export class OfflineError extends Error {}
+export class ConflictError extends Error {
+  constructor() { super('Not saved: the plan was changed on the other phone while you were editing.'); }
+}
 
 let state = null;
 let nextId = 1;
@@ -15,7 +18,7 @@ const changed = () => { if (listener) setTimeout(listener, 0); };
 async function seed() {
   const res = await fetch(new URL('../../seed/plan.example.json', import.meta.url));
   const data = await res.json();
-  state = { plan: data.plan, ticks: [], landed: null, startedOn: isoToday(), history: [], balances: [], offline: false };
+  state = { plan: data.plan, planVersion: 1, ticks: [], landed: null, startedOn: isoToday(), history: [], balances: [], offline: false };
   data.balances.forEach((b) => state.balances.push({ id: nextId++, ...b }));
 }
 
@@ -23,7 +26,11 @@ export async function load() {
   if (!state) await seed();
   return structuredClone(state);
 }
-export async function savePlan(plan) { state.plan = structuredClone(plan); }
+export async function savePlan(plan, { version = null } = {}) {
+  if (version !== null && version !== undefined && version !== state.planVersion) throw new ConflictError();
+  state.plan = structuredClone(plan);
+  state.planVersion += 1;
+}
 export async function setTick(transferId, on) {
   state.ticks = state.ticks.filter((id) => id !== transferId);
   if (on) state.ticks.push(transferId);
@@ -34,7 +41,10 @@ export async function closeFortnight() {
   const p = checklistProgress(state.plan, state.ticks, state.landed);
   if (p.done === 0) return false;
   state.history.unshift({ id: nextId++, closedOn: isoToday(), transfersDone: p.done, transfersTotal: p.total, depositTransferred: p.depositTransferred, debtPaid: p.debtPaid, startedOn: state.startedOn });
-  if (p.debtPaid > 0) state.plan.debts = payDebts(state.plan.debts, p.debtPaid).debts;
+  if (p.debtPaid > 0) {
+    state.plan.debts = payDebts(state.plan.debts, p.debtPaid).debts;
+    state.planVersion += 1;
+  }
   state.ticks = [];
   state.landed = null;
   state.startedOn = isoToday();
@@ -59,7 +69,9 @@ export async function importAll(obj) {
   const errors = validateExport(obj);
   if (errors.length) throw new Error(errors.join(' '));
   state.plan = structuredClone(obj.plan);
+  state.planVersion += 1;
   state.ticks = [];
+  state.landed = null;
   state.balances = (obj.balances || []).map((b) => ({ id: nextId++, ...b }));
   state.history = [...(obj.history || [])].reverse().map((h) => ({ id: nextId++, ...h }));
 }
